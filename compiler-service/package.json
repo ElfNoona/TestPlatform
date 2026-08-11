@@ -1,0 +1,25 @@
+{
+  "name": "exam-platform-compiler-service",
+  "version": "0.1.0",
+  "description": "Sandboxed Dart/Flutter execution — Express API + BullMQ worker + Dockerode",
+  "type": "commonjs",
+  "scripts": {
+    "dev:api": "nodemon api/src/index.js",
+    "dev:worker": "nodemon worker/src/index.js",
+    "start:api": "node api/src/index.js",
+    "start:worker": "node worker/src/index.js",
+    "sandbox:build": "docker build -t exam-platform/dart-sandbox:latest ./sandbox"
+  },
+  "dependencies": {
+    "bullmq": "^5.12.0",
+    "dockerode": "^4.0.2",
+    "express": "^5.0.0",
+    "ioredis": "^5.4.1",
+    "dotenv": "^16.4.5",
+    "cors": "^2.8.5",
+    "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  }
+}

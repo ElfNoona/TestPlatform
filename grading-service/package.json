@@ -1,0 +1,22 @@
+{
+  "name": "exam-platform-grading-service",
+  "version": "0.1.0",
+  "description": "AI-suggested grading + teacher review/override",
+  "type": "commonjs",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "nodemon src/index.js",
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "express": "^5.0.0",
+    "pg": "^8.12.0",
+    "ioredis": "^5.4.1",
+    "dotenv": "^16.4.5",
+    "cors": "^2.8.5",
+    "openai": "^4.56.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "exam-platform-admin",
+  "version": "0.1.0",
+  "description": "One-time CLI: spreadsheet → Postgres student/slot/question-set import",
+  "type": "commonjs",
+  "main": "src/index.js",
+  "bin": {
+    "exam-import": "./src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "pg": "^8.12.0",
+    "xlsx": "^0.18.5",
+    "dotenv": "^16.4.5",
+    "minimist": "^1.2.8"
+  }
+}
