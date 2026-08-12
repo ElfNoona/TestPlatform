@@ -1,0 +1,12 @@
+{
+  "durationSeconds": 10,
+  "numCandidates": 10,
+  "events": {
+    "generated": 31,
+    "acked": 30,
+    "persisted": 31,
+    "lost": 0,
+    "rateLimited": 0
+  },
+  "passed": true
+}

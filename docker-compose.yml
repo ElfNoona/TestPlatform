@@ -137,11 +137,20 @@ services:
     environment:
       NODE_ENV: development
       PROCTORING_PORT: ${PROCTORING_PORT:-7000}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://examuser:changeme@postgres:5432/examplatform}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret}
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-dev-service-key}
       # TODO: plug in real OCI credentials once provider confirmed (decisions.md #4)
       OCI_NAMESPACE: ${OCI_NAMESPACE:-}
       OCI_BUCKET: ${OCI_BUCKET:-}
       OCI_ACCESS_KEY: ${OCI_ACCESS_KEY:-}
       OCI_SECRET_KEY: ${OCI_SECRET_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     volumes:
       - ./proctoring:/app
       - /app/node_modules

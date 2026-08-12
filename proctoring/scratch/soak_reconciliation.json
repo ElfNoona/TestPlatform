@@ -1,0 +1,67 @@
+{
+  "passed": true,
+  "totalGenerated": 31,
+  "missing": [],
+  "details": {
+    "9626b773-afad-4ee2-9e0f-0bf7ece9d15e": {
+      "passed": true,
+      "generated": 2,
+      "persisted": 2,
+      "errors": []
+    },
+    "0a0494a8-ea8f-4606-8c99-ac32b7f83e58": {
+      "passed": true,
+      "generated": 4,
+      "persisted": 4,
+      "errors": []
+    },
+    "44b4cf8a-56ee-4a67-b08c-d3efdfdc1f87": {
+      "passed": true,
+      "generated": 3,
+      "persisted": 3,
+      "errors": []
+    },
+    "036e92b7-ec75-4e26-8b09-11a4cec8907c": {
+      "passed": true,
+      "generated": 4,
+      "persisted": 4,
+      "errors": []
+    },
+    "245c60ff-439b-407d-9bb2-4a5cd046dd9f": {
+      "passed": true,
+      "generated": 3,
+      "persisted": 3,
+      "errors": []
+    },
+    "71519395-9fec-4258-80a1-469d172596ac": {
+      "passed": true,
+      "generated": 5,
+      "persisted": 5,
+      "errors": []
+    },
+    "393a54dd-d861-43bc-966d-aba89371899a": {
+      "passed": true,
+      "generated": 2,
+      "persisted": 2,
+      "errors": []
+    },
+    "7115b360-20a4-48ef-b819-7ae076737983": {
+      "passed": true,
+      "generated": 2,
+      "persisted": 2,
+      "errors": []
+    },
+    "92fe6269-4510-4104-be25-a400f78e44c9": {
+      "passed": true,
+      "generated": 2,
+      "persisted": 2,
+      "errors": []
+    },
+    "e9667850-9134-4fc2-ae6b-77e7e1ea8eed": {
+      "passed": true,
+      "generated": 4,
+      "persisted": 4,
+      "errors": []
+    }
+  }
+}

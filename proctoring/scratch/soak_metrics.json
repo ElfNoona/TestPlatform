@@ -1,0 +1,33 @@
+[
+  {
+    "timestamp": "2026-08-12T18:09:33.763Z",
+    "websocketConnections": 9,
+    "queue": {
+      "waiting": 0,
+      "active": 0,
+      "completed": 0,
+      "failed": 0
+    },
+    "postgres": {
+      "poolTotal": 2,
+      "poolIdle": 1,
+      "poolWaiting": 0
+    },
+    "process": {
+      "rssMb": 69,
+      "heapUsedMb": 17
+    },
+    "stats": {
+      "generated": 31,
+      "accepted": 0,
+      "acked": 30,
+      "persisted": 0,
+      "late": 0,
+      "rejected": 0,
+      "rate_limited": 0,
+      "failed": 1,
+      "lost": 0,
+      "duplicated": 0
+    }
+  }
+]
