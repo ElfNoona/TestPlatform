@@ -1,79 +1,96 @@
 'use strict'
 
-/**
- * proctoring/src/index.js
- *
- * Handles post-exam video upload from student browsers.
- * Students record locally during the exam and upload after submission.
- * This is NOT a live-streaming service.
- *
- * POST /upload        — accepts a video file, delegates to the storage adapter
- * GET  /status/:id    — check upload status for a given attempt
- *
- * Storage adapter pattern: swap in any provider by implementing the
- * StorageAdapter interface (see adapters/).
- *
- * Current lean: Oracle Cloud (OCI) Block Storage — NOT yet wired up.
- * Active adapter: LocalAdapter (saves to ./uploads/ as a fallback)
- * TODO: implement OciAdapter when provider is confirmed (decisions.md #4)
- */
+const http = require('http')
+const app = require('./app')
+const env = require('./config/env')
+const migrate = require('./db/migrate')
+const db = require('./db')
+const { initWebSocket } = require('./websocket')
+const eventService = require('./services/event.service')
 
-require('dotenv').config()
-const express = require('express')
-const multer  = require('multer')
-const cors    = require('cors')
-const path    = require('path')
+// Import BullMQ Worker to register and start it in the same process
+const { eventWorker, redisConnection: workerRedis } = require('./workers/event.worker')
 
-const LocalAdapter = require('./adapters/LocalAdapter')
-// const OciAdapter = require('./adapters/OciAdapter')  // TODO: swap in when ready
+const server = http.createServer(app)
 
-const app  = express()
-const PORT = process.env.PROCTORING_PORT || 7000
+// Initialize WebSocket server
+const wss = initWebSocket(server)
 
-// Use local adapter by default
-const storage = new LocalAdapter(path.join(__dirname, '..', 'uploads'))
+let isShuttingDown = false
 
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 2 * 1024 * 1024 * 1024 },  // 2 GB max
-  fileFilter: (_req, file, cb) => {
-    // Accept common video MIME types
-    if (file.mimetype.startsWith('video/')) cb(null, true)
-    else cb(new Error('Only video files are accepted'))
-  },
-})
+async function gracefulShutdown(reason) {
+  if (isShuttingDown) return
+  isShuttingDown = true
 
-app.use(cors())
-app.use(express.json())
+  console.log(`[proctoring-shutdown] starting graceful shutdown. Reason: ${reason}`)
 
-// ── POST /upload ──────────────────────────────────────────────────────────────
-app.post('/upload', upload.single('recording'), async (req, res, next) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' })
+    // 1. Close HTTP server (stops accepting new connections)
+    console.log('[proctoring-shutdown] closing HTTP server...')
+    await new Promise((resolve) => server.close(resolve))
+    console.log('[proctoring-shutdown] HTTP server closed.')
 
-    const attemptId = req.body.attemptId
-    if (!attemptId) return res.status(400).json({ error: 'attemptId is required' })
+    // 2. Close WebSocket server
+    if (wss) {
+      console.log('[proctoring-shutdown] closing WebSocket server...')
+      await new Promise((resolve) => wss.close(resolve))
+      console.log('[proctoring-shutdown] WebSocket server closed.')
+    }
 
-    // TODO: validate that the attemptId is submitted and belongs to the uploading student
-    const result = await storage.save(attemptId, req.file.buffer, req.file.mimetype)
+    // 3. Close BullMQ Worker
+    console.log('[proctoring-shutdown] closing event worker...')
+    await eventWorker.close()
+    console.log('[proctoring-shutdown] event worker closed.')
 
-    res.json({ uploaded: true, location: result.location })
-  } catch (err) { next(err) }
+    // 4. Close Redis connections
+    console.log('[proctoring-shutdown] closing Redis connections...')
+    await workerRedis.quit()
+    await eventService.redisConnection.quit()
+    console.log('[proctoring-shutdown] Redis connections closed.')
+
+    // 5. Close PostgreSQL Pool
+    console.log('[proctoring-shutdown] closing database pool...')
+    await db.pool.end()
+    console.log('[proctoring-shutdown] database pool closed.')
+
+    console.log('[proctoring-shutdown] graceful shutdown completed.')
+    if (reason === 'uncaughtException') {
+      process.exit(1)
+    } else {
+      process.exit(0)
+    }
+  } catch (err) {
+    console.error('[proctoring-shutdown] error during graceful shutdown:', err)
+    process.exit(1)
+  }
+}
+
+// Register signals
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'))
+process.on('SIGINT', () => gracefulShutdown('SIGINT'))
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[unhandledRejection] Unhandled Promise Rejection at:', promise, 'reason:', reason)
 })
 
-// ── GET /status/:id ───────────────────────────────────────────────────────────
-app.get('/status/:id', async (req, res, next) => {
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException] Fatal Uncaught Exception thrown:', err)
+  gracefulShutdown('uncaughtException')
+})
+
+async function startServer() {
   try {
-    const status = await storage.status(req.params.id)
-    res.json(status)
-  } catch (err) { next(err) }
-})
+    // 1. Run migrations before accepting traffic
+    await migrate()
 
-app.get('/health', (_req, res) => res.json({ status: 'ok', ts: new Date().toISOString() }))
+    // 2. Start listening
+    server.listen(env.PORT, () => {
+      console.log(`[proctoring] Service successfully started on port :${env.PORT}`)
+    })
+  } catch (err) {
+    console.error('[proctoring-bootstrap] Failed to bootstrap proctoring service:', err)
+    process.exit(1)
+  }
+}
 
-app.use((err, _req, res, _next) => {
-  console.error('[proctoring]', err)
-  res.status(500).json({ error: err.message })
-})
-
-app.listen(PORT, () => console.log(`[proctoring] listening on :${PORT}`))
+startServer()

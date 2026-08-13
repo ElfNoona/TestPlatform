@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Mock Exam Page</title>
+</head>
+<body>
+  <h1>Mock Exam Page</h1>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token');
+    const sessionId = params.get('sessionId');
+    const port = params.get('port') || '7994';
+
+    const ws = new WebSocket(`ws://localhost:${port}/ws/proctoring/${sessionId}?token=${token}`);
+
+    ws.onopen = () => {
+      console.log('WS_OPEN');
+    };
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      console.log('WS_RECEIVED', JSON.stringify(data));
+    };
+
+    ws.onclose = (event) => {
+      console.log('WS_CLOSED', event.code);
+    };
+
+    let sequenceNumber = 1;
+
+    function sendEvent(type, metadata = {}) {
+      const payload = {
+        clientEventId: 'evt_browser_' + type + '_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+        type,
+        clientTimestamp: new Date().toISOString(),
+        sequenceNumber: sequenceNumber++,
+        metadata
+      };
+      ws.send(JSON.stringify(payload));
+      console.log('WS_SENT', type);
+    }
+
+    // Bind browser focus/visibility/copy events
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        sendEvent('TAB_HIDDEN');
+      } else {
+        sendEvent('TAB_VISIBLE');
+      }
+    });
+
+    window.addEventListener('blur', () => {
+      sendEvent('TAB_HIDDEN');
+    });
+
+    document.addEventListener('copy', () => {
+      sendEvent('COPY');
+    });
+  </script>
+</body>
+</html>
