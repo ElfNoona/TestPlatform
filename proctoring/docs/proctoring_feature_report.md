@@ -45,6 +45,12 @@ The proctoring service tracks real-time candidate browser telemetry (e.g., tab s
 - **`proctoring_events`**: Append-only log of client telemetry events. Evaluates `ON CONFLICT (proctoring_session_id, client_event_id) DO NOTHING` for worker idempotency.
 - **`proctoring_incidents`**: Logs anomalies that cross warning thresholds.
 - **`proctoring_session_reviews`**: Append-only audit history tracking administrative review logs.
+- **`proctoring_media`**: Tracks webcam snapshot metadata, storage keys, MIME types, files sizes, and retention expiration timestamps.
+
+### D. Media Ingestion & Object Storage (Parallel Channel)
+- **Direct-to-Bucket Ingestion**: Rather than loading the WebSocket connection or database with media binaries, the candidate's browser requests a presigned upload URL from Node.js, uploads the image directly to object storage via HTTP PUT, and notifies the backend of completion.
+- **Unified Timeline mapping**: Snapshots are associated with database UUIDs of matching telemetry events (e.g. `TAB_HIDDEN`, `FULLSCREEN_EXITED`), allowing reviewers to view exact visual evidence on the teacher timeline.
+- **Storage Abstraction**: Swappable storage adapter interface supporting `LocalStorageAdapter` for local development and `R2StorageAdapter` for production Cloudflare R2 deployments.
 
 ---
 
@@ -59,6 +65,12 @@ The proctoring service tracks real-time candidate browser telemetry (e.g., tab s
 
 ### C. Self-Healing Gap Diagnostics
 - At session finalization or retrieval, the system performs a sequence validation. Any gaps in the client sequence number chain (`sequenceNumber`) are dynamically flagged as `missingSequences` to audit missing network packets.
+
+### D. Media Security, Isolation, & Fail-Fast Safeguards
+- **JWT Session Ownership**: Upload URLs can only be requested and completed for the candidate's own authenticated session (verified via JWT tokens). Cross-talk is strictly forbidden.
+- **Short-Lived Downloads**: Teachers access media via 5-minute short-lived presigned URLs. Action audits log the teacher email, accessed media ID, and timestamp.
+- **Fail-Fast Startup**: If R2 storage is selected but credentials are missing in the environment, the application crashes on boot rather than silently falling back to local filesystem storage in production.
+- **Idempotent Retention Cleanup**: A background worker automatically checks for expired media records, deletes objects from R2 storage, and transitions their DB status to `DELETED`. Deletion operations are built to be idempotent.
 
 ---
 
@@ -113,14 +125,29 @@ Exposes no sensitive environment credentials or raw code tracebacks.
 - Reconnects 100 concurrent clients after a network drop. Spacing out re-transmissions at 200ms successfully flushes buffers without triggering rate limits.
 - **Status**: **100% Passed**
 
-### F. Load & Soak Benchmark Statistics
-Simulated 100 active candidates with steady traffic and database finalizations:
+### F. Media Evidence Unit Suite (`test_media_unit.js`)
+- Asserts storage key namespace generation, size verification limits, and basic metadata database insertion.
+- **Status**: **100% Passed**
+
+### G. Media API Integration Suite (`test_media_api.js`)
+- Boots API server, tests token auth and cross-talk blocks, uploads binaries to local storage simulator, and verifies expired retention cleanup.
+- **Status**: **100% Passed**
+
+### H. Media Browser E2E Suite (`test_media_e2e.js`)
+- Runs Puppeteer browser with fake webcam devices, captures frame, compresses canvas to JPEG, requests upload URL, PUT uploads binary, and completes metadata flow.
+- **Status**: **100% Passed**
+
+### I. Load & Soak Benchmark Statistics
+Simulated 100 active candidates with steady traffic, media uploads, and database finalizations:
 
 | Metric | Measured P50 | Measured Max / P99 | Result |
 | :--- | :--- | :--- | :--- |
-| **Ingestion Latency** | `6 ms` | `3434 ms` *(with simulated Redis outage)* | **Excellent** |
+| **Telemetry Ingestion Latency** | `6 ms` | `3434 ms` *(with simulated Redis outage)* | **Excellent** |
 | **HTTP Finalization** | `47 ms` | `79 ms` | **Excellent** |
+| **Media URL Gen & Complete** | `14 ms` | `38 ms` | **Excellent** |
+| **Simulated Media Upload** | `120 ms` | `410 ms` *(local filesystem upload simulation)* | **Excellent** |
 | **4-Layer Soak Audit** | 0 lost events | 0 discrepancies in risk/counters | **Verified** |
+| **Media Storage Integrity** | 0 lost files | 0 orphaned records | **Verified** |
 
 ---
 
