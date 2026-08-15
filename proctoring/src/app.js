@@ -8,6 +8,7 @@ const sessionRouter = require('./routes/session')
 const eventRouter = require('./routes/event')
 const incidentRouter = require('./routes/incident')
 const uploadRouter = require('./routes/upload')
+const mediaRouter = require('./routes/media')
 const errorHandler = require('./middleware/error-handler')
 
 const app = express()
@@ -24,6 +25,7 @@ app.use(sessionRouter)
 app.use(eventRouter)
 app.use(incidentRouter)
 app.use(uploadRouter)
+app.use(mediaRouter)
 
 // Global error handler
 app.use(errorHandler)
