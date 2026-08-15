@@ -90,6 +90,26 @@ CREATE TABLE IF NOT EXISTS proctoring_session_reviews (
 
 CREATE INDEX IF NOT EXISTS idx_proctoring_session_reviews_session ON proctoring_session_reviews(proctoring_session_id);
 
+-- 6. Proctoring Media
+CREATE TABLE IF NOT EXISTS proctoring_media (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  proctoring_session_id UUID NOT NULL REFERENCES proctoring_sessions(id) ON DELETE CASCADE,
+  event_id              UUID REFERENCES proctoring_events(id) ON DELETE SET NULL,
+  media_type            TEXT NOT NULL,
+  status                TEXT NOT NULL DEFAULT 'REQUESTED',
+  storage_provider      TEXT NOT NULL,
+  storage_key           TEXT NOT NULL,
+  mime_type             TEXT NOT NULL,
+  size_bytes            BIGINT,
+  captured_at           TIMESTAMPTZ NOT NULL,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at            TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_proctoring_media_session ON proctoring_media(proctoring_session_id);
+CREATE INDEX IF NOT EXISTS idx_proctoring_media_event ON proctoring_media(event_id);
+CREATE INDEX IF NOT EXISTS idx_proctoring_media_expires ON proctoring_media(expires_at) WHERE expires_at IS NOT NULL;
+
 -- Migration steps for existing tables:
 ALTER TABLE proctoring_incidents ALTER COLUMN status SET DEFAULT 'UNREVIEWED';
 UPDATE proctoring_incidents SET status = 'UNREVIEWED' WHERE status = 'OPEN';
