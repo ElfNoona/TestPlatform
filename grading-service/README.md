@@ -1,16 +1,23 @@
-# grading-service — AI-Suggested Grading
+# grading-service — Evaluation Orchestrator
 
 ## Purpose
 
-Grades exam submissions. Auto-grades MCQ and output-prediction questions. Uses an AI model to suggest scores for coding and debug questions. Exposes a review/override API for teachers.
+Grades exam submissions by consuming the **evaluation contracts** defined in the assessment backend's question records. Produces automatic scores for teacher review.
+
+> **Architectural boundary**: The grading service owns *how answers are evaluated*. It does not own question definitions, candidate data, or attempt lifecycle management — those belong to the assessment backend.
+
+---
 
 ## Stack
 
 - Node.js 20, Express 5
-- PostgreSQL 16 (to store grades)
-- `openai` SDK (or equivalent — provider TBD)
+- PostgreSQL 16 (store `automatic_results`, `teacher_adjustments`)
+- BullMQ + Redis (async grading job queue)
+- AI provider SDK (TBD — see `docs/decisions.md`)
 
-## How to run locally
+---
+
+## How to Run Locally
 
 ```bash
 npm install
@@ -22,35 +29,79 @@ Or via Docker Compose (from root):
 docker compose up grading-service -d
 ```
 
-## Grading logic
+---
+
+## Grading Logic
 
 | Question type | Method | Auto-final |
 |---|---|---|
-| `mcq` | Exact answer-key match | ✅ Yes |
-| `output-prediction` | Trimmed string match | ✅ Yes |
-| `coding` | AI model suggestion | ❌ Needs teacher review |
-| `debug` | AI model suggestion | ❌ Needs teacher review |
+| `mcq` | Exact answer-key match against `correct_answer` | ✅ Yes |
+| `output-prediction` | Trimmed/normalised string comparison | ✅ Yes |
+| `coding` | Delegates to compiler-service via `evaluation_config_id`; AI suggestion for partial credit | ❌ Needs teacher review |
+| `debug` | Delegates to compiler-service; AI suggestion for partial credit | ❌ Needs teacher review |
+
+### Grading Flow
+
+```
+Attempt submitted
+      ↓
+backend → POST /grade (attemptId, answers[])
+      ↓
+grading-service resolves evaluation contracts per question
+      ↓
+MCQ / output-prediction → deterministic comparison
+      ↓
+coding / debug → compiler-service (evaluation_config_id)
+      ↓
+compiler-service → test results → marks
+      ↓
+automatic_score stored in PostgreSQL
+      ↓
+Teacher review (override possible)
+      ↓
+final_score = automatic_score + teacher_adjustment
+```
+
+### Teacher Score Model
+
+```
+automatic_score     (read-only, produced by grading service)
+teacher_adjustment  (±, entered by teacher)
+final_score         (automatic_score + teacher_adjustment)
+comment             (teacher's review notes)
+reviewed_at         (timestamp)
+teacher_id          (audit trail)
+```
+
+---
 
 ## Endpoints
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/grade` | Grade all answers for an attempt |
-| `GET` | `/review/attempts/:id` | Get all grades for an attempt (teacher) |
-| `POST` | `/review/grades/:id/override` | Teacher override a grade |
+| `POST` | `/grade` | Grade all answers for an attempt (triggered by backend on submit) |
+| `GET` | `/review/attempts/:id` | Get all grades for an attempt (teacher auth required) |
+| `POST` | `/review/grades/:id/override` | Teacher override a grade (append-only audit trail) |
+
+---
 
 ## Open TODOs
 
-- [ ] Implement AI grading calls (`graders/index.js` has the stub)
-- [ ] Lock in AI provider (OpenAI, Gemini, or Anthropic — decisions.md)
-- [ ] Persist grades to DB
+- [ ] Implement deterministic MCQ/output grading (`graders/index.js` has the stub)
+- [ ] Implement `evaluation_config_id` resolution and compiler-service delegation
+- [ ] Lock in AI provider for coding/debug suggestion (OpenAI, Gemini, or Anthropic — `docs/decisions.md`)
+- [ ] Persist grades to PostgreSQL
 - [ ] Add teacher auth to review routes
-- [ ] Screenshot comparison for widget-test questions — not confirmed (decisions.md #3)
+- [ ] Implement grading job queue (BullMQ) for async processing at scale
+- [ ] Handle grading-service unavailable gracefully (backend should not block submit if grading is down)
 
-## How it talks to other services
+---
+
+## How it Talks to Other Services
 
 ```
-grading-service  ←  HTTP POST from backend (triggered on submit)
-grading-service  →  postgres :5432 (store grades)
-grading-service  →  AI provider API (external, TBD)
+grading-service  ←  HTTP POST from backend :4000   (triggered on attempt submit)
+grading-service  →  compiler-service :5000          (coding/debug evaluation)
+grading-service  →  postgres :5432                  (store automatic_results, teacher_adjustments)
+grading-service  →  AI provider API                 (coding/debug suggestions — TBD)
 ```

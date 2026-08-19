@@ -1,34 +1,51 @@
 import { createContext, useContext, useState, ReactNode } from 'react'
 
 /**
- * AuthContext — stores the student's JWT and attemptId in memory.
+ * AuthContext — stores the student's JWT, attemptId, and proctoring info in memory.
  * Deliberately NOT stored in localStorage to avoid cross-tab leakage.
- *
- * TODO: implement actual token refresh if needed
- * TODO: add teacher auth flow once provider is decided (decisions.md #1)
  */
 
 interface AuthState {
   token: string | null
   attemptId: string | null
+  proctoringSessionId: string | null
+  proctoringStatus: 'ACTIVE' | 'DEGRADED' | 'UNAVAILABLE' | null
 }
 
 interface AuthContextValue extends AuthState {
-  login: (token: string, attemptId: string) => void
+  login: (
+    token: string,
+    attemptId: string,
+    proctoringSessionId: string | null,
+    proctoringStatus: string | null
+  ) => void
   logout: () => void
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [auth, setAuth] = useState<AuthState>({ token: null, attemptId: null })
+  const [auth, setAuth] = useState<AuthState>({
+    token: null,
+    attemptId: null,
+    proctoringSessionId: null,
+    proctoringStatus: null,
+  })
 
-  function login(token: string, attemptId: string) {
-    setAuth({ token, attemptId })
+  function login(
+    token: string,
+    attemptId: string,
+    proctoringSessionId: string | null,
+    proctoringStatus: string | null
+  ) {
+    const status = ['ACTIVE', 'DEGRADED', 'UNAVAILABLE'].includes(proctoringStatus ?? '')
+      ? (proctoringStatus as AuthState['proctoringStatus'])
+      : 'UNAVAILABLE'
+    setAuth({ token, attemptId, proctoringSessionId, proctoringStatus: status })
   }
 
   function logout() {
-    setAuth({ token: null, attemptId: null })
+    setAuth({ token: null, attemptId: null, proctoringSessionId: null, proctoringStatus: null })
   }
 
   return (

@@ -5,11 +5,14 @@ const env = require('../config/env')
 const { MEDIA_STATES } = require('../config/constants')
 const LocalStorageAdapter = require('../storage/local.storage')
 const R2StorageAdapter = require('../storage/r2.storage')
+const S3StorageAdapter = require('../storage/s3.storage')
 const { v4: uuidv4 } = require('uuid')
 
 // Instantiate storage adapter based on environment variable
 let storageAdapter
-if (env.MEDIA_STORAGE_PROVIDER === 'r2') {
+if (env.MEDIA_STORAGE_PROVIDER === 's3') {
+  storageAdapter = new S3StorageAdapter()
+} else if (env.MEDIA_STORAGE_PROVIDER === 'r2') {
   storageAdapter = new R2StorageAdapter()
 } else {
   // Default to local storage simulator

@@ -1,21 +1,89 @@
-# Exam Platform — Monorepo
+# KRS Assessment Platform — Monorepo
 
-> Timed test-taking platform for ~100 students (batches of 20, 2-hour slots).  
+> Timed, proctored examination platform for ~100 students (batches of 20, 2-hour slots).
 > Dart/Flutter coding questions delivered via a **web-based React** exam runner.
 
 ---
 
-## Services
+## Service Map
 
-| Service | Description | README |
+| Service | Port | Description |
 |---|---|---|
-| [`frontend/`](./frontend/README.md) | React (Vite + TypeScript) — login, countdown timer, Monaco editor | [→](./frontend/README.md) |
-| [`backend/`](./backend/README.md) | Node/Express API — attempts, answers, auth, admin routes | [→](./backend/README.md) |
-| [`compiler-service/`](./compiler-service/README.md) | Sandboxed Dart execution — Express + BullMQ + Dockerode | [→](./compiler-service/README.md) |
-| [`grading-service/`](./grading-service/README.md) | AI-suggested grading + teacher review/override | [→](./grading-service/README.md) |
-| [`admin/`](./admin/README.md) | CLI: spreadsheet → Postgres (student/slot/question-set import) | [→](./admin/README.md) |
-| [`proctoring/`](./proctoring/README.md) | Post-exam video upload handler (storage adapter pattern) | [→](./proctoring/README.md) |
-| [`docs/`](./docs/decisions.md) | Architecture notes, open decisions, runbooks | [→](./docs/decisions.md) |
+| [`frontend/`](./frontend/README.md) | `5173` | React (Vite + TypeScript) — candidate exam UI, proctoring client, teacher review dashboard |
+| [`backend/`](./backend/README.md) | `4000` | Node/Express — attempts, answers, questions, auth, admin routes. The assessment platform data owner. |
+| [`compiler-service/`](./compiler-service/README.md) | `5000` | Sandboxed Dart execution — Express + BullMQ + Dockerode. Owned independently. |
+| [`grading-service/`](./grading-service/README.md) | `6000` | Evaluation orchestrator — consumes evaluation contracts from questions, produces automatic scores for teacher review. Owned independently. |
+| [`proctoring/`](./proctoring/README.md) | `7000` | Real-time WebSocket telemetry, risk scoring, webcam/screen evidence, R2 media storage. |
+| [`admin/`](./admin/README.md) | CLI | Spreadsheet → PostgreSQL import (students, slots, question sets). |
+| [`docs/`](./docs/decisions.md) | — | Architecture decisions, open questions, runbooks. |
+
+---
+
+## Architecture
+
+The platform is organized around a **clear service ownership boundary**:
+
+```
+                    ┌──────────────────────────────────────────────────┐
+                    │              Assessment Platform                 │
+                    │                                                  │
+                    │  Questions → Sets → Attempts → Answers           │
+                    │                    │                             │
+                    │                    ▼                             │
+                    │              Teacher Review                      │
+                    └────────────────────┬─────────────────────────────┘
+                                         │
+                              ┌──────────┴──────────┐
+                              ▼                     ▼
+                       Grading Service        Proctoring Service
+                              │                     │
+                              ▼                     ├── WebSocket Telemetry
+                       Compiler Service             ├── Risk Scoring
+                                                    └── R2 Media Evidence
+```
+
+### Data Ownership
+| Service | Owns |
+|---|---|
+| **Assessment backend** | `questions`, `question_sets`, `attempts`, `answers`, `automatic_results`, `teacher_adjustments` |
+| **Grading service** | Evaluation jobs, grading rules, automatic scores |
+| **Compiler service** | Code execution, sandboxing, test results, resource limits |
+| **Proctoring service** | `proctoring_sessions`, `proctoring_events`, incidents, risk scores, media metadata, R2 evidence, integrity reviews |
+
+### Key Architectural Invariants
+
+- **Media failure ≠ exam failure.** Camera/screen snapshot outages do not interrupt active exams or telemetry.
+- **Compiler outage ≠ telemetry outage.** All services are independently deployable.
+- **Assessment platform owns the evaluation contract, not the evaluator.** The backend stores `evaluation_config_id` and `marks` — it does not implement grading or compile code.
+- **Question sets are immutable once an attempt begins.** Every attempt records its exact `question_set_id`; the evaluation configuration used is reproducible for audit.
+
+### Full Candidate Flow
+
+```
+Browser (Candidate)
+  │
+  ├── SystemCheck (WebRTC / WS / Camera / Fullscreen)
+  │
+  ▼
+frontend :5173
+  │
+  ├── /api/*  ──────────────────────────► backend :4000
+  │                                              │
+  │                                              ├── postgres :5432
+  │                                              ├── compiler-service :5000
+  │                                              └── grading-service :6000
+  │
+  └── WebSocket + Media ─────────────► proctoring :7000
+                                                  │
+                                                  ├── Redis / BullMQ
+                                                  ├── postgres :5432
+                                                  └── AWS S3 / Cloudflare R2
+
+Teacher browser
+  └── /teacher (frontend)
+        ├── backend :4000  (candidates, attempts, answers, grades)
+        └── proctoring :7000  (sessions, timeline, media evidence)
+```
 
 ---
 
@@ -28,7 +96,7 @@
 ### 1. Configure environment
 ```bash
 cp .env.example .env
-# Edit .env and fill in any required secrets
+# Edit .env — fill in JWT_SECRET, DB credentials, and storage provider keys
 ```
 
 ### 2. Start all containerised services
@@ -44,7 +112,13 @@ npm install
 npm run dev          # → http://localhost:5173
 ```
 
-### 4. Run the admin import (one-time, not containerised)
+### 4. Bootstrap the backend schema (first time only)
+```bash
+cd backend
+npm run db:migrate
+```
+
+### 5. Import students (per exam sitting)
 ```bash
 cd admin
 npm install
@@ -53,30 +127,92 @@ node src/index.js --file path/to/students.xlsx
 
 ---
 
-## Architecture
+## Question Upload
+
+Teachers upload question sets as JSON files via the `/teacher` dashboard or the admin CLI.
+
+Each question record contains only the **definition and evaluation contract** — not grading logic:
+
+```json
+{
+  "type": "mcq",
+  "prompt": "Which of the following declares a nullable String in Dart?",
+  "options": ["String name;", "String? name;", "nullable String name;", "String name = null;"],
+  "correct_answer": "String? name;",
+  "marks": 2,
+  "order_index": 0
+}
+```
+
+```json
+{
+  "type": "coding",
+  "prompt": "Write a Dart function int sumList(List<int> nums) ...",
+  "starter_code": "int sumList(List<int> nums) {\n  // TODO\n}",
+  "marks": 10,
+  "evaluation": {
+    "language": "dart",
+    "evaluation_type": "compiler_tests",
+    "evaluation_config_id": "eval_dart_sum_v1"
+  },
+  "order_index": 1
+}
+```
+
+The assessment backend validates structure and evaluation references. The compiler and grading services resolve `evaluation_config_id` at grading time.
+
+---
+
+## Grading Architecture
 
 ```
-Browser (Student)
-  └─► frontend (React/Vite :5173)
-        └─► backend API (:4000)
-              ├─► Postgres  ─── attempts, answers, students, question_sets
-              ├─► compiler-service API (:5000)
-              │       └─► BullMQ queue (Redis) ←── worker
-              └─► grading-service (:6000)
+MCQ / Output Prediction
+        ↓
+  Grading Service
+        ↓
+  Deterministic / normalised comparison
+        ↓
+  automatic_score → PostgreSQL
 
-Teacher browser
-  └─► backend API  (teacher auth — provider TBD, see docs/decisions.md #1)
-        └─► grading-service (review / override)
+Coding / Debug
+        ↓
+  Grading Service
+        ↓
+  Compiler / Execution Service
+        ↓
+  test results → marks
+        ↓
+  automatic_score → PostgreSQL (pending teacher review)
 
-Post-exam
-  └─► proctoring service (:7000)  →  object storage (OCI — TBD, decisions.md #4)
+Teacher Review
+        ↓
+  automatic_score (read-only)
+  teacher_adjustment (±)
+  final_score = automatic_score + teacher_adjustment
+  comment, reviewed_at → PostgreSQL
 ```
 
 ---
 
-## Open Decisions
+## Proctoring Evidence Flow
 
-Full list in [`docs/decisions.md`](./docs/decisions.md).
+```
+Candidate Browser
+        │
+        ├── WebSocket telemetry ──► proctoring :7000 ──► Redis/BullMQ ──► PostgreSQL
+        │        (TAB_HIDDEN, COPY, PASTE, FULLSCREEN_EXITED, ...)
+        │
+        └── Media snapshots (every 60s webcam / 120s screen)
+                 │
+                 ├── POST /api/v1/media/upload-url  ──► proctoring generates presigned URL
+                 ├── PUT <presigned-url> (binary JPEG direct to S3/R2)
+                 └── POST /api/v1/media/:id/complete ──► proctoring verifies & stores metadata
+```
+
+**Cost estimation (100 candidates, 90-min exam):**
+- Webcam: 90 snapshots × 25 KB ≈ 2.25 MB per candidate
+- Screen:  45 snapshots × 120 KB ≈ 5.4 MB per candidate
+- Total: ~765 MB for all 100 candidates (< $0.02 on S3/R2)
 
 ---
 
@@ -87,7 +223,24 @@ Full list in [`docs/decisions.md`](./docs/decisions.md).
 | Frontend | React 18, Vite, TypeScript, `@monaco-editor/react` |
 | Backend API | Node.js 20, Express 5, PostgreSQL 16, `pg` |
 | Job queue | Redis 7, BullMQ |
-| Code sandbox | Docker (Dart slim), Dockerode |
-| AI grading | Provider TBD |
+| Code sandbox | Docker (Dart SDK 3.4 slim), Dockerode |
+| Grading | Grading service (AI provider TBD — see `docs/decisions.md`) |
+| Proctoring WebSocket | `ws` library, JWT handshake, rate-limited gateway |
+| Evidence storage | AWS S3 `ap-south-1` (Cloudflare R2 adapter also available) |
 | Dev orchestration | Docker Compose |
-| Upload storage | OCI Block Storage (TBD) |
+
+---
+
+## Open Decisions
+
+Full list in [`docs/decisions.md`](./docs/decisions.md).
+
+| # | Topic | Status |
+|---|---|---|
+| 1 | Teacher auth mechanism (magic link vs Google OAuth) | 🔴 Open |
+| 2 | Teacher review/grading UI scope | 🟡 In progress |
+| 3 | Widget-test screenshot comparison | 🔵 Out of scope (post Aug 30) |
+| 4 | Proctoring storage provider | ✅ Resolved — AWS S3 `ap-south-1` |
+| 5 | `EXEC_CONCURRENCY` tuning | 🟡 Needs rehearsal |
+| 6 | Frontend stack (Flutter → React) | ✅ Resolved |
+| 7 | Screen-sharing policy | 🟡 Pending teacher policy decision |
