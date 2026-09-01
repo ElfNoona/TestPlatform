@@ -15,7 +15,7 @@ interface CheckItem {
   errorMsg?: string
 }
 
-export default function SystemCheck({ attemptId, token, proctoringOrigin: _proctoringOrigin, onComplete }: SystemCheckProps) {
+export default function SystemCheck({ attemptId, token, proctoringOrigin, onComplete }: SystemCheckProps) {
   const [checks, setChecks] = useState<CheckItem[]>([
     { id: 'browser', label: 'Browser Compatibility Check', status: 'pending' },
     { id: 'network', label: 'Internet Connectivity Check', status: 'pending' },
@@ -81,11 +81,12 @@ export default function SystemCheck({ attemptId, token, proctoringOrigin: _proct
     updateCheckStatus('websocket', 'checking')
     try {
       await new Promise<void>((resolve, reject) => {
-        const wsProto = window.location.protocol === 'https:' ? 'wss' : 'ws'
-        // Connect to proctoring port (7000 in dev, same origin in production behind proxy)
-        const wsHost = window.location.hostname + ':7000'
-        // Use a test path; server will reject non-session paths but the upgrade itself proves WS works
-        const ws = new WebSocket(`${wsProto}://${wsHost}/ws/proctoring/00000000-0000-0000-0000-000000000001?token=probe`)
+        // Parse dynamic proctoring origin
+        const url = new URL(proctoringOrigin)
+        const wsProto = url.protocol === 'https:' ? 'wss:' : 'ws:'
+        const wsHost = url.host
+        // Connect and probe the WS handshake
+        const ws = new WebSocket(`${wsProto}//${wsHost}/ws/proctoring/00000000-0000-0000-0000-000000000001?token=probe`)
         const timeout = setTimeout(() => {
           ws.close()
           reject(new Error('WebSocket connection timed out after 5s'))

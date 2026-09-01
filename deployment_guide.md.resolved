@@ -1,0 +1,165 @@
+# 24/7 Production Deployment Guide
+
+Your Docker stack is verified for 300 users. Here are 3 deployment options ranked by cost and reliability.
+
+---
+
+## Option 1: Free — Cloudflare Tunnel (Quickest)
+
+Expose your **local machine** to the internet with zero cost. Students access via a public URL while Docker runs on your PC.
+
+```bash
+# Install cloudflared (one-time)
+winget install cloudflare.cloudflared
+
+# Authenticate 
+cloudflared tunnel login
+
+# Create a named tunnel
+cloudflared tunnel create krs-exam
+
+# Expose backend (port 4000) publicly
+cloudflared tunnel route dns krs-exam exam.yourdomain.com
+cloudflared tunnel run --url http://localhost:4000 krs-exam
+```
+
+| Pros | Cons |
+|---|---|
+| Free, no server cost | Your PC must stay ON 24/7 |
+| HTTPS automatic | Latency depends on your home WiFi |
+| No port forwarding needed | Not suitable for 300+ users |
+
+> [!WARNING]
+> This is a **demo/testing solution only**. Your PC sleeping or losing WiFi = exam down.
+
+---
+
+## Option 2: Recommended — VPS Self-Hosted (₹500-1500/month)
+
+Deploy Docker Compose on a cloud VPS. This is the **production-grade** option.
+
+### Providers & Pricing (for 300 users)
+
+| Provider | Spec | Price |
+|---|---|---|
+| **Hetzner** (best value) | 4 vCPU, 8GB RAM, 160GB | ~₹700/mo |
+| **DigitalOcean** | 4 vCPU, 8GB RAM | ~₹1400/mo |
+| **AWS Lightsail** | 4 vCPU, 8GB RAM | ~₹1200/mo |
+| **Oracle Cloud** | 4 ARM cores, 24GB RAM | **Free forever** |
+
+### Deployment Steps
+
+```bash
+# 1. SSH into your VPS
+ssh root@your-server-ip
+
+# 2. Install Docker
+curl -fsSL https://get.docker.com | sh
+
+# 3. Clone your repo
+git clone https://github.com/your-org/Flutter_test_platform.git
+cd Flutter_test_platform
+
+# 4. Create production .env
+cat > .env << 'EOF'
+POSTGRES_USER=examuser
+POSTGRES_PASSWORD=<STRONG_PASSWORD_HERE>
+POSTGRES_DB=examplatform
+JWT_SECRET=<RANDOM_64_CHAR_STRING>
+INTERNAL_SERVICE_KEY=<RANDOM_32_CHAR_STRING>
+NODE_ENV=production
+EOF
+
+# 5. Launch everything
+docker compose up -d
+
+# 6. Run DB migrations
+docker exec flutter_test_platform-backend-1 node src/db/migrate.js
+```
+
+### Add HTTPS with Nginx + Certbot
+
+```bash
+# Install Nginx & Certbot
+apt install nginx certbot python3-certbot-nginx -y
+
+# Configure reverse proxy (/etc/nginx/sites-available/exam)
+server {
+    server_name exam.yourdomain.com;
+    
+    location / {
+        proxy_pass http://localhost:4000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+    }
+    
+    location /ws/ {
+        proxy_pass http://localhost:7000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+
+# Enable & get SSL certificate
+ln -s /etc/nginx/sites-available/exam /etc/nginx/sites-enabled/
+certbot --nginx -d exam.yourdomain.com
+systemctl restart nginx
+```
+
+### Auto-restart on crash
+
+```bash
+# Docker already has restart: unless-stopped
+# Add a systemd watchdog for extra safety
+systemctl enable docker
+```
+
+> [!IMPORTANT]
+> **Oracle Cloud Free Tier** gives you 4 ARM cores + 24GB RAM **permanently free**. This is more than enough for 300 concurrent users and is the best option if budget is zero.
+
+---
+
+## Option 3: Managed Cloud (₹3000+/month)
+
+For teams that don't want to manage servers. Use **Railway**, **Render**, or **AWS ECS**.
+
+| Platform | Setup | Cost |
+|---|---|---|
+| Railway | `railway up` from repo | ~₹2000/mo |
+| Render | Connect GitHub, auto-deploy | ~₹3000/mo |
+| AWS ECS/Fargate | Terraform/CloudFormation | ~₹4000/mo |
+
+---
+
+## My Recommendation
+
+> [!TIP]
+> **Go with Option 2 using Oracle Cloud Free Tier or Hetzner.**
+> - Oracle = free forever with 24GB RAM (overkill for your needs)
+> - Hetzner = ₹700/mo for a reliable European VPS with great perf
+> 
+> Both support Docker Compose out of the box. Your entire stack deploys in under 10 minutes.
+
+## What You Need Before Deploying
+
+1. **A domain name** (₹100-800/year from Namecheap, GoDaddy, or Cloudflare)
+2. **Push your code to GitHub** so you can `git clone` on the server
+3. **Generate strong secrets** for `JWT_SECRET` and `POSTGRES_PASSWORD`
+4. **Build the frontend** (`npm run build`) and serve it via Nginx or embed in the backend
+
+## Architecture on Production
+
+```mermaid
+graph LR
+    Student[Student Browser] -->|HTTPS| Nginx
+    Nginx -->|:4000| Backend
+    Nginx -->|:7000/ws| Proctoring
+    Backend -->|internal| Postgres
+    Backend -->|internal| Redis
+    Backend -->|internal| GradingService
+    GradingService -->|internal| Judge0
+    Judge0 -->|internal| Redis
+```

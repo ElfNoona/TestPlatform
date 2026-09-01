@@ -18,6 +18,9 @@ function requireStudentAuth(req, res, next) {
   const token = authHeader.slice(7)
   try {
     const payload = jwt.verify(token, JWT_SECRET)
+    if (req.params.id && payload.attemptId && String(req.params.id) !== String(payload.attemptId)) {
+      return res.status(403).json({ error: 'Token belongs to a different attempt' })
+    }
     req.student = payload
     next()
   } catch {

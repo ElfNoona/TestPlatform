@@ -133,6 +133,27 @@ For coding and debug questions where tests are insufficient to assign partial cr
 
 ---
 
+## Decision 10 — Code Execution Engine (Judge0)
+
+**Status**: ✅ Resolved (2026-08-31)
+**Affects**: `docker-compose.yml`, `grading-service/`
+
+**Decision**: **Judge0 Extra (Self-Hosted)** — Replace the custom `compiler-service` with the official Judge0 Community Edition Extra.
+
+**Reasoning**:
+- Out-of-the-box support for many languages (including Dart via ID 72/93).
+- Built-in sandboxing and security.
+- REST API is simpler to interact with than managing BullMQ queues manually.
+- The `extra` image supports a broader array of runtimes.
+- We will use **global default** resource limits rather than configuring memory/time per submission.
+
+**What was implemented**:
+- Removed the custom `compiler-service` directory.
+- Replaced `compiler-api` and `compiler-worker` with `judge0-server` and `judge0-worker` in `docker-compose.yml`.
+- `grading-service` communicates with Judge0 over HTTP (port 2358).
+
+---
+
 ## Resolved Decisions (Archive)
 
 | # | Decision | Resolved |

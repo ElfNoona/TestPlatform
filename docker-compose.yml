@@ -12,6 +12,7 @@ services:
 
   postgres:
     image: postgres:16-alpine
+    command: ["postgres", "-c", "max_connections=1000"]
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-examuser}
@@ -20,9 +21,9 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "5433:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-examuser}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-examuser} -d ${POSTGRES_DB:-examplatform}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -49,7 +50,7 @@ services:
       - "${BACKEND_PORT:-4000}:4000"
     environment:
       NODE_ENV: development
-      DATABASE_URL: ${DATABASE_URL:-postgresql://examuser:changeme@postgres:5432/examplatform}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-examuser}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-examplatform}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       JWT_SECRET: ${JWT_SECRET:-dev-secret}
       TEACHER_AUTH_PROVIDER: ${TEACHER_AUTH_PROVIDER:-todo}
@@ -57,54 +58,52 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       MAGIC_LINK_SECRET: ${MAGIC_LINK_SECRET:-}
       TEACHER_ALLOWLIST_EMAILS: ${TEACHER_ALLOWLIST_EMAILS:-}
+      GRADING_SERVICE_URL: "http://gradingservice:6000"
+      PROCTORING_SERVICE_URL: "http://proctoring:7000"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    volumes:
-      - ./backend:/app
-      - /app/node_modules
+    # Note: no source bind-mount — Dockerfile COPY is used (Windows WSL2 compatible)
 
-  compiler-api:
-    build:
-      context: ./compiler-service
-      dockerfile: Dockerfile.api
+  judge0-server:
+    image: judge0/judge0:1.13.1
     restart: unless-stopped
     ports:
-      - "${COMPILER_API_PORT:-5000}:5000"
+      - "2358:2358"
     environment:
-      NODE_ENV: development
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
-      COMPILER_API_PORT: ${COMPILER_API_PORT:-5000}
+      - REDIS_HOST=redis
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=${POSTGRES_USER:-examuser}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - POSTGRES_DB=${POSTGRES_DB:-examplatform}
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
-    volumes:
-      - ./compiler-service:/app
-      - /app/node_modules
-
-  compiler-worker:
-    build:
-      context: ./compiler-service
-      dockerfile: Dockerfile.worker
-    restart: unless-stopped
-    environment:
-      NODE_ENV: development
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
-      EXEC_CONCURRENCY: ${EXEC_CONCURRENCY:-4}
-      DOCKER_SANDBOX_IMAGE: ${DOCKER_SANDBOX_IMAGE:-exam-platform/dart-sandbox:latest}
-    depends_on:
-      redis:
-        condition: service_healthy
-    volumes:
-      - ./compiler-service:/app
-      - /app/node_modules
-      - /var/run/docker.sock:/var/run/docker.sock  # Dockerode needs host Docker socket
-    # TODO: tighten permissions — running privileged for dev only
     privileged: true
 
-  grading-service:
+  judge0-worker:
+    image: judge0/judge0:1.13.1
+    command: ["./scripts/workers"]
+    restart: unless-stopped
+    environment:
+      - REDIS_HOST=redis
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=${POSTGRES_USER:-examuser}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - POSTGRES_DB=${POSTGRES_DB:-examplatform}
+      - MAX_CONCURRENT_JOBS=14
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    privileged: true
+
+  gradingservice:
     build:
       context: ./grading-service
       dockerfile: Dockerfile
@@ -113,19 +112,18 @@ services:
       - "${GRADING_PORT:-6000}:6000"
     environment:
       NODE_ENV: development
-      DATABASE_URL: ${DATABASE_URL:-postgresql://examuser:changeme@postgres:5432/examplatform}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-examuser}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-examplatform}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       AI_GRADING_PROVIDER: ${AI_GRADING_PROVIDER:-todo}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      JUDGE0_API_URL: ${JUDGE0_API_URL:-http://judge0-server:2358}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    volumes:
-      - ./grading-service:/app
-      - /app/node_modules
+    # Note: no source bind-mount — Dockerfile COPY is used (Windows WSL2 compatible)
 
   proctoring:
     build:
@@ -137,7 +135,7 @@ services:
     environment:
       NODE_ENV: development
       PROCTORING_PORT: ${PROCTORING_PORT:-7000}
-      DATABASE_URL: ${DATABASE_URL:-postgresql://examuser:changeme@postgres:5432/examplatform}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-examuser}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-examplatform}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       JWT_SECRET: ${JWT_SECRET:-dev-secret}
       INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-dev-service-key}
@@ -158,8 +156,6 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./proctoring:/app
-      - /app/node_modules
       - uploads:/app/uploads   # local fallback until OCI is wired up
 
 volumes:
