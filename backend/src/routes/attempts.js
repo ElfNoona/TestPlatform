@@ -266,7 +266,36 @@ router.post('/:id/submit', requireStudentAuth, async (req, res, next) => {
       console.error('[backend-submit-proctoring] Error ending proctoring session:', err.message)
     }
 
-    // TODO: trigger grading-service job (fire-and-forget or queue)
+    // Trigger grading-service job (fire-and-forget)
+    const gradingUrl = process.env.GRADING_SERVICE_URL || 'http://localhost:6000'
+    try {
+      const answersForGradingRes = await db.query(
+        `SELECT a.question_id as "questionId", a.answer_text as "answerText",
+                q.type, q.starter_code as "starterCode", q.correct_answer as "correctAnswer",
+                q.evaluation_config_id as "evaluationConfigId"
+         FROM answers a
+         JOIN questions q ON q.id = a.question_id
+         WHERE a.attempt_id = $1`,
+        [id]
+      )
+      
+      const payloadAnswers = answersForGradingRes.rows.map(r => ({
+        questionId: r.questionId,
+        type: r.type,
+        answerText: r.answerText,
+        starterCode: r.starterCode,
+        correctAnswer: r.correctAnswer,
+        evaluation: { evaluation_config_id: r.evaluationConfigId }
+      }))
+
+      fetch(`${gradingUrl}/grade`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ attemptId: id, answers: payloadAnswers })
+      }).catch(err => console.error('[backend-submit-grading] Error triggering grading:', err.message))
+    } catch (err) {
+       console.error('[backend-submit-grading] Error fetching answers for grading:', err.message)
+    }
 
     res.json({
       submitted: true,

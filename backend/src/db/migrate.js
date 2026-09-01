@@ -82,6 +82,32 @@ CREATE TABLE IF NOT EXISTS teacher_reviews (
   comment       TEXT,
   reviewed_at   TIMESTAMPTZ DEFAULT now()
 );
+
+-- Test cases for coding questions (evaluated via Judge0)
+CREATE TABLE IF NOT EXISTS test_cases (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  question_id      UUID REFERENCES questions(id) ON DELETE CASCADE,
+  stdin            TEXT DEFAULT '',           -- Standard input passed to the program
+  expected_stdout  TEXT NOT NULL,             -- Expected standard output to compare against
+  is_hidden        BOOLEAN DEFAULT true,      -- If false, the student sees this test case
+  weight           INT DEFAULT 1,             -- Points awarded for passing this case
+  created_at       TIMESTAMPTZ DEFAULT now()
+);
+
+-- Final aggregated grades for a student's answer
+CREATE TABLE IF NOT EXISTS grades (
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  attempt_id         UUID REFERENCES attempts(id) ON DELETE CASCADE,
+  question_id        UUID REFERENCES questions(id) ON DELETE CASCADE,
+  auto_score         NUMERIC(5,2),            -- Score calculated by Judge0/AI
+  max_score          NUMERIC(5,2) NOT NULL,   -- Max possible score for the question
+  status             TEXT DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'GRADED', 'NEEDS_REVIEW', 'ERROR')),
+  rationale          TEXT,                    -- E.g., "Passed 4/5 test cases."
+  teacher_score      NUMERIC(5,2),            -- Manual override by a teacher
+  teacher_comment    TEXT,
+  evaluated_at       TIMESTAMPTZ,
+  UNIQUE (attempt_id, question_id)
+);
 `
 
 async function migrate() {

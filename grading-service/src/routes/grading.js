@@ -2,7 +2,8 @@
 
 const { Router } = require('express')
 const router = Router()
-const { gradeMcq, gradeOutputPrediction, gradeWithAi } = require('../graders')
+const db = require('../db')
+const { gradeMcq, gradeOutputPrediction, gradeWithAi, evaluateWithJudge0 } = require('../graders')
 
 /**
  * POST /grade — called by backend after a student submits.
@@ -30,13 +31,35 @@ router.post('/', async (req, res, next) => {
           return gradeOutputPrediction(ans)
         case 'coding':
         case 'debug':
-          return gradeWithAi(ans)
+          return evaluateWithJudge0(ans)
         default:
           return { questionId: ans.questionId, score: null, maxScore: 1, rationale: 'Unknown type', needsReview: true }
       }
     }))
 
-    // TODO: save grades to DB
+    // Save grades to DB
+    for (const g of grades) {
+      await db.query(
+        `INSERT INTO grades (attempt_id, question_id, auto_score, max_score, status, rationale, evaluated_at) 
+         VALUES ($1, $2, $3, $4, $5, $6, now())
+         ON CONFLICT (attempt_id, question_id) 
+         DO UPDATE SET 
+            auto_score = EXCLUDED.auto_score, 
+            max_score = EXCLUDED.max_score, 
+            status = EXCLUDED.status, 
+            rationale = EXCLUDED.rationale, 
+            evaluated_at = EXCLUDED.evaluated_at`,
+        [
+          attemptId, 
+          g.questionId, 
+          g.score, 
+          g.maxScore, 
+          g.needsReview ? 'NEEDS_REVIEW' : 'GRADED', 
+          g.rationale
+        ]
+      )
+    }
+
     res.json({ attemptId, grades })
   } catch (err) { next(err) }
 })

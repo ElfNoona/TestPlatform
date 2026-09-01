@@ -11,7 +11,7 @@
 |---|---|---|
 | [`frontend/`](./frontend/README.md) | `5173` | React (Vite + TypeScript) — candidate exam UI, proctoring client, teacher review dashboard |
 | [`backend/`](./backend/README.md) | `4000` | Node/Express — attempts, answers, questions, auth, admin routes. The assessment platform data owner. |
-| [`compiler-service/`](./compiler-service/README.md) | `5000` | Sandboxed Dart execution — Express + BullMQ + Dockerode. Owned independently. |
+| Judge0 | `2358` | Sandboxed code execution (Judge0 Extra edition). |
 | [`grading-service/`](./grading-service/README.md) | `6000` | Evaluation orchestrator — consumes evaluation contracts from questions, produces automatic scores for teacher review. Owned independently. |
 | [`proctoring/`](./proctoring/README.md) | `7000` | Real-time WebSocket telemetry, risk scoring, webcam/screen evidence, R2 media storage. |
 | [`admin/`](./admin/README.md) | CLI | Spreadsheet → PostgreSQL import (students, slots, question sets). |
@@ -38,7 +38,7 @@ The platform is organized around a **clear service ownership boundary**:
                        Grading Service        Proctoring Service
                               │                     │
                               ▼                     ├── WebSocket Telemetry
-                       Compiler Service             ├── Risk Scoring
+                       Judge0                       ├── Risk Scoring
                                                     └── R2 Media Evidence
 ```
 
@@ -47,13 +47,13 @@ The platform is organized around a **clear service ownership boundary**:
 |---|---|
 | **Assessment backend** | `questions`, `question_sets`, `attempts`, `answers`, `automatic_results`, `teacher_adjustments` |
 | **Grading service** | Evaluation jobs, grading rules, automatic scores |
-| **Compiler service** | Code execution, sandboxing, test results, resource limits |
+| **Judge0** | Code execution, sandboxing, test results, resource limits |
 | **Proctoring service** | `proctoring_sessions`, `proctoring_events`, incidents, risk scores, media metadata, R2 evidence, integrity reviews |
 
 ### Key Architectural Invariants
 
 - **Media failure ≠ exam failure.** Camera/screen snapshot outages do not interrupt active exams or telemetry.
-- **Compiler outage ≠ telemetry outage.** All services are independently deployable.
+- **Execution engine outage ≠ telemetry outage.** All services are independently deployable.
 - **Assessment platform owns the evaluation contract, not the evaluator.** The backend stores `evaluation_config_id` and `marks` — it does not implement grading or compile code.
 - **Question sets are immutable once an attempt begins.** Every attempt records its exact `question_set_id`; the evaluation configuration used is reproducible for audit.
 
@@ -70,7 +70,7 @@ frontend :5173
   ├── /api/*  ──────────────────────────► backend :4000
   │                                              │
   │                                              ├── postgres :5432
-  │                                              ├── compiler-service :5000
+  │                                              ├── judge0 :2358
   │                                              └── grading-service :6000
   │
   └── WebSocket + Media ─────────────► proctoring :7000
@@ -102,7 +102,7 @@ cp .env.example .env
 ### 2. Start all containerised services
 ```bash
 docker compose up -d
-# Starts: postgres, redis, backend, compiler-service (api + worker), grading-service, proctoring
+# Starts: postgres, redis, backend, judge0 (server + worker), grading-service, proctoring
 ```
 
 ### 3. Run the frontend (separate terminal — not containerised for dev)
@@ -159,7 +159,7 @@ Each question record contains only the **definition and evaluation contract** �
 }
 ```
 
-The assessment backend validates structure and evaluation references. The compiler and grading services resolve `evaluation_config_id` at grading time.
+The assessment backend validates structure and evaluation references. The grading service resolves `evaluation_config_id` at grading time to execute via Judge0.
 
 ---
 
@@ -178,7 +178,7 @@ Coding / Debug
         ↓
   Grading Service
         ↓
-  Compiler / Execution Service
+  Judge0
         ↓
   test results → marks
         ↓
@@ -223,7 +223,7 @@ Candidate Browser
 | Frontend | React 18, Vite, TypeScript, `@monaco-editor/react` |
 | Backend API | Node.js 20, Express 5, PostgreSQL 16, `pg` |
 | Job queue | Redis 7, BullMQ |
-| Code sandbox | Docker (Dart SDK 3.4 slim), Dockerode |
+| Code sandbox | Judge0 Extra (Docker) |
 | Grading | Grading service (AI provider TBD — see `docs/decisions.md`) |
 | Proctoring WebSocket | `ws` library, JWT handshake, rate-limited gateway |
 | Evidence storage | AWS S3 `ap-south-1` (Cloudflare R2 adapter also available) |
@@ -241,6 +241,6 @@ Full list in [`docs/decisions.md`](./docs/decisions.md).
 | 2 | Teacher review/grading UI scope | 🟡 In progress |
 | 3 | Widget-test screenshot comparison | 🔵 Out of scope (post Aug 30) |
 | 4 | Proctoring storage provider | ✅ Resolved — AWS S3 `ap-south-1` |
-| 5 | `EXEC_CONCURRENCY` tuning | 🟡 Needs rehearsal |
+| 5 | Judge0 worker concurrency tuning | 🟡 Needs rehearsal |
 | 6 | Frontend stack (Flutter → React) | ✅ Resolved |
 | 7 | Screen-sharing policy | 🟡 Pending teacher policy decision |
