@@ -1,0 +1,43 @@
+{
+  "config": {
+    "totalUsers": 300,
+    "concurrency": 50,
+    "waves": 6
+  },
+  "timing": {
+    "wallTimeMs": 5175,
+    "throughputUsersPerSec": 58
+  },
+  "results": {
+    "start": {
+      "ok": 300,
+      "fail": 0
+    },
+    "state": {
+      "ok": 300,
+      "fail": 0
+    },
+    "save": {
+      "ok": 900,
+      "fail": 0
+    },
+    "submit": {
+      "ok": 300,
+      "fail": 0
+    }
+  },
+  "latencyMs": {
+    "avg": 543,
+    "p50": 477,
+    "p95": 866,
+    "p99": 898,
+    "min": 406,
+    "max": 906
+  },
+  "summary": {
+    "totalOps": 1800,
+    "failures": 0,
+    "errorRate": 0
+  },
+  "sampleErrors": []
+}
