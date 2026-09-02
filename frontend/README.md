@@ -26,8 +26,8 @@ Serves two audiences:
 | `/splash/:attemptId` | `SplashScreen` | ✅ Implemented — pre-exam countdown |
 | `/exam/:attemptId` | `ExamPage` | ✅ Implemented — SystemCheck → exam |
 | `/submit-confirm` | `SubmitConfirmPage` | ✅ Implemented |
-| `/teacher` | `TeacherDashboard` | ✅ Implemented — candidate list, risk matrix |
-| `/teacher/session/:id` | `SessionReviewPage` | ✅ Implemented — timeline + evidence viewer |
+| `/teacher` | `TeacherDashboard` | 🔴 Planned — candidate list, risk matrix |
+| `/teacher/session/:id` | `TeacherSessionView` | 🔴 Planned — timeline + evidence viewer |
 | `/teacher/question-sets` | `QuestionUpload` | 🔴 Planned — upload & manage questions |
 
 ---
@@ -115,6 +115,10 @@ The Vite dev server proxies:
 
 ## Open TODOs
 
+- [ ] Register Dart TextMate grammar in Monaco (`QuestionRenderer.tsx`)
+- [ ] Add WebSocket reachability check to `SystemCheck.tsx`
+- [ ] Implement `/teacher` dashboard — candidate list, risk scoring display
+- [ ] Implement `/teacher/session/:id` — timeline, R2 snapshot viewer, integrity decision form
 - [ ] Implement `/teacher/question-sets` — bulk JSON upload, template cards per question type
 - [ ] Server-authoritative timer offset synchronisation (sync local clock to `endsAt` on each poll)
 

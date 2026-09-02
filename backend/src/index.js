@@ -19,8 +19,8 @@ app.use(cors({
 }))
 app.use(express.json())
 
-// Rate limiting — scaled for 300 concurrent exam candidates
-app.use(rateLimit({ windowMs: 60_000, max: 2000, standardHeaders: true }))
+// Basic rate limiting — tighten for production
+app.use(rateLimit({ windowMs: 60_000, max: 200, standardHeaders: true }))
 
 // ── Routes ──────────────────────────────────────────────────────────────────
 app.use('/attempts', attemptsRouter)

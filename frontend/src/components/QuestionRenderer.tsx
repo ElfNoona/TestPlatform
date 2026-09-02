@@ -8,82 +8,89 @@ interface Props {
   onAnswerChange: (questionId: string, answer: string) => void
 }
 
-function registerDartLanguage(monaco: typeof import('monaco-editor').editor | any) {
-  if (monaco.languages.getLanguages().some((l: any) => l.id === 'dart')) return
+function useDartLanguage(monaco: ReturnType<typeof useMonaco>) {
+  const registered = useRef(false)
+  useEffect(() => {
+    if (!monaco || registered.current) return
+    registered.current = true
 
-  monaco.languages.register({ id: 'dart' })
-  monaco.languages.setMonarchTokensProvider('dart', {
-    keywords: [
-      'abstract', 'as', 'assert', 'async', 'await', 'break', 'case', 'catch',
-      'class', 'const', 'continue', 'covariant', 'default', 'deferred', 'do',
-      'dynamic', 'else', 'enum', 'export', 'extends', 'extension', 'external',
-      'factory', 'false', 'final', 'finally', 'for', 'Function', 'get', 'hide',
-      'if', 'implements', 'import', 'in', 'interface', 'is', 'late', 'library',
-      'mixin', 'new', 'null', 'on', 'operator', 'part', 'required', 'rethrow',
-      'return', 'set', 'show', 'static', 'super', 'switch', 'sync', 'this',
-      'throw', 'true', 'try', 'typedef', 'var', 'void', 'while', 'with', 'yield',
-    ],
-    builtins: ['print', 'List', 'Map', 'Set', 'String', 'int', 'double', 'bool',
-               'num', 'Object', 'Iterable', 'Future', 'Stream', 'DateTime'],
-    tokenizer: {
-      root: [
-        [/\/\/.*$/, 'comment'],
-        [/\/\*/, { token: 'comment', next: '@blockComment' }],
-        [/"([^"\\]|\\.)*"/, 'string'],
-        [/'([^'\\]|\\.)*'/, 'string'],
-        [/r"[^"]*"/, 'string'],
-        [/r'[^']*'/, 'string'],
-        [/\b0x[0-9a-fA-F]+\b/, 'number.hex'],
-        [/\b\d+\.?\d*([eE][+-]?\d+)?\b/, 'number'],
-        [/\b([a-zA-Z_$][\w$]*)\b/, {
-          cases: {
-            '@keywords': 'keyword',
-            '@builtins': 'type',
-            '@default': 'identifier',
-          },
-        }],
-        [/[{}()\[\]]/, 'delimiter.bracket'],
-        [/[;,.]/, 'delimiter'],
-        [/[<>]=?|[!=]=?=?|&&|\|\||[+\-*/%&|^~?:]/, 'operator'],
+    monaco.languages.register({ id: 'dart' })
+    monaco.languages.setMonarchTokensProvider('dart', {
+      keywords: [
+        'abstract', 'as', 'assert', 'async', 'await', 'break', 'case', 'catch',
+        'class', 'const', 'continue', 'covariant', 'default', 'deferred', 'do',
+        'dynamic', 'else', 'enum', 'export', 'extends', 'extension', 'external',
+        'factory', 'false', 'final', 'finally', 'for', 'Function', 'get', 'hide',
+        'if', 'implements', 'import', 'in', 'interface', 'is', 'late', 'library',
+        'mixin', 'new', 'null', 'on', 'operator', 'part', 'required', 'rethrow',
+        'return', 'set', 'show', 'static', 'super', 'switch', 'sync', 'this',
+        'throw', 'true', 'try', 'typedef', 'var', 'void', 'while', 'with', 'yield',
       ],
-      blockComment: [
-        [/[^/*]+/, 'comment'],
-        [/\*\//, { token: 'comment', next: '@pop' }],
-        [/[/*]/, 'comment'],
-      ],
-    },
-  })
+      builtins: ['print', 'List', 'Map', 'Set', 'String', 'int', 'double', 'bool',
+                 'num', 'Object', 'Iterable', 'Future', 'Stream', 'DateTime'],
+      tokenizer: {
+        root: [
+          [/\/\/.*$/, 'comment'],
+          [/\/\*/, { token: 'comment', next: '@blockComment' }],
+          [/"([^"\\]|\\.)*"/, 'string'],
+          [/'([^'\\]|\\.)*'/, 'string'],
+          [/r"[^"]*"/, 'string'],
+          [/r'[^']*'/, 'string'],
+          [/\b0x[0-9a-fA-F]+\b/, 'number.hex'],
+          [/\b\d+\.?\d*([eE][+-]?\d+)?\b/, 'number'],
+          [/\b([a-zA-Z_$][\w$]*)\b/, {
+            cases: {
+              '@keywords': 'keyword',
+              '@builtins': 'type',
+              '@default': 'identifier',
+            },
+          }],
+          [/[{}()\[\]]/, 'delimiter.bracket'],
+          [/[;,.]/, 'delimiter'],
+          [/[<>]=?|[!=]=?=?|&&|\|\||[+\-*/%&|^~?:]/, 'operator'],
+        ],
+        blockComment: [
+          [/[^/*]+/, 'comment'],
+          [/\*\//, { token: 'comment', next: '@pop' }],
+          [/[/*]/, 'comment'],
+        ],
+      },
+    })
 
-  monaco.editor.defineTheme('krs-dark', {
-    base: 'vs-dark',
-    inherit: true,
-    rules: [
-      { token: 'keyword',    foreground: 'e8c47d', fontStyle: 'bold' },
-      { token: 'type',       foreground: '70c5c5' },
-      { token: 'string',     foreground: 'a8dca8' },
-      { token: 'comment',    foreground: '5c6a80', fontStyle: 'italic' },
-      { token: 'number',     foreground: 'e8a37d' },
-      { token: 'number.hex', foreground: 'e8a37d' },
-      { token: 'operator',   foreground: 'b8c8d8' },
-      { token: 'identifier', foreground: 'dcdce0' },
-      { token: 'delimiter.bracket', foreground: 'e8c47d' },
-    ],
-    colors: {
-      'editor.background':           '#121211', /* Lacquer deep ground from screenshots */
-      'editor.foreground':           '#E2E2E0',
-      'editor.lineHighlightBackground': '#1C1C1B',
-      'editorLineNumber.foreground': '#4E4E4A',
-      'editorLineNumber.activeForeground': '#E6C15A',
-      'editor.selectionBackground':  'rgba(230, 193, 90, 0.16)',
-      'editorGutter.background':     '#121211',
-      'editorWidget.background':     '#262624',
-      'editorSuggestWidget.background': '#262624',
-      'editorSuggestWidget.border':  'rgba(230, 193, 90, 0.12)',
-    },
-  })
+    monaco.editor.defineTheme('krs-dark', {
+      base: 'vs-dark',
+      inherit: true,
+      rules: [
+        { token: 'keyword',    foreground: 'e8c47d', fontStyle: 'bold' },
+        { token: 'type',       foreground: '70c5c5' },
+        { token: 'string',     foreground: 'a8dca8' },
+        { token: 'comment',    foreground: '5c6a80', fontStyle: 'italic' },
+        { token: 'number',     foreground: 'e8a37d' },
+        { token: 'number.hex', foreground: 'e8a37d' },
+        { token: 'operator',   foreground: 'b8c8d8' },
+        { token: 'identifier', foreground: 'dcdce0' },
+        { token: 'delimiter.bracket', foreground: 'e8c47d' },
+      ],
+      colors: {
+        'editor.background':           '#121211', /* Lacquer deep ground from screenshots */
+        'editor.foreground':           '#E2E2E0',
+        'editor.lineHighlightBackground': '#1C1C1B',
+        'editorLineNumber.foreground': '#4E4E4A',
+        'editorLineNumber.activeForeground': '#E6C15A',
+        'editor.selectionBackground':  'rgba(230, 193, 90, 0.16)',
+        'editorGutter.background':     '#121211',
+        'editorWidget.background':     '#262624',
+        'editorSuggestWidget.background': '#262624',
+        'editorSuggestWidget.border':  'rgba(230, 193, 90, 0.12)',
+      },
+    })
+  }, [monaco])
 }
 
 export default function QuestionRenderer({ question, answerValue, onAnswerChange }: Props) {
+  const monaco = useMonaco()
+  useDartLanguage(monaco)
+
   const [selectedOption, setSelectedOption] = useState<string>(answerValue ?? '')
 
   useEffect(() => {
@@ -168,7 +175,6 @@ export default function QuestionRenderer({ question, answerValue, onAnswerChange
                 height="100%"
                 language="dart"
                 theme="krs-dark"
-                beforeMount={registerDartLanguage}
                 defaultValue={question.starterCode ?? '// Write your Dart code here\n'}
                 value={question.type !== 'output-prediction' ? (answerValue || question.starterCode || '') : undefined}
                 options={{

@@ -23,7 +23,7 @@ services:
     ports:
       - "5433:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-examuser} -d ${POSTGRES_DB:-examplatform}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-examuser}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -50,7 +50,7 @@ services:
       - "${BACKEND_PORT:-4000}:4000"
     environment:
       NODE_ENV: development
-      DATABASE_URL: postgresql://${POSTGRES_USER:-examuser}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-examplatform}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://examuser:changeme@postgres:5432/examplatform}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       JWT_SECRET: ${JWT_SECRET:-dev-secret}
       TEACHER_AUTH_PROVIDER: ${TEACHER_AUTH_PROVIDER:-todo}
@@ -58,14 +58,14 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       MAGIC_LINK_SECRET: ${MAGIC_LINK_SECRET:-}
       TEACHER_ALLOWLIST_EMAILS: ${TEACHER_ALLOWLIST_EMAILS:-}
-      GRADING_SERVICE_URL: "http://gradingservice:6000"
-      PROCTORING_SERVICE_URL: "http://proctoring:7000"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    # Note: no source bind-mount — Dockerfile COPY is used (Windows WSL2 compatible)
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
 
   judge0-server:
     image: judge0/judge0:1.13.1
@@ -103,7 +103,7 @@ services:
         condition: service_healthy
     privileged: true
 
-  gradingservice:
+  grading-service:
     build:
       context: ./grading-service
       dockerfile: Dockerfile
@@ -112,7 +112,7 @@ services:
       - "${GRADING_PORT:-6000}:6000"
     environment:
       NODE_ENV: development
-      DATABASE_URL: postgresql://${POSTGRES_USER:-examuser}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-examplatform}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://examuser:changeme@postgres:5432/examplatform}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       AI_GRADING_PROVIDER: ${AI_GRADING_PROVIDER:-todo}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -123,7 +123,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    # Note: no source bind-mount — Dockerfile COPY is used (Windows WSL2 compatible)
+    volumes:
+      - ./grading-service:/app
+      - /app/node_modules
 
   proctoring:
     build:
@@ -135,7 +137,7 @@ services:
     environment:
       NODE_ENV: development
       PROCTORING_PORT: ${PROCTORING_PORT:-7000}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-examuser}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-examplatform}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://examuser:changeme@postgres:5432/examplatform}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       JWT_SECRET: ${JWT_SECRET:-dev-secret}
       INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-dev-service-key}
@@ -156,6 +158,8 @@ services:
       redis:
         condition: service_healthy
     volumes:
+      - ./proctoring:/app
+      - /app/node_modules
       - uploads:/app/uploads   # local fallback until OCI is wired up
 
 volumes:

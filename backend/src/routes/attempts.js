@@ -19,35 +19,6 @@ const { requireStudentAuth } = require('../middleware/auth')
 
 const router = Router()
 
-// Bypassing Node v20 undici internal parser bugs with local Doker DNS
-const safeFetch = (urlStr, options = {}) => {
-  return new Promise((resolve, reject) => {
-    const http = require('http')
-    const { URL } = require('url')
-    const u = new URL(urlStr)
-    const req = http.request({
-      hostname: u.hostname,
-      port: u.port || 80,
-      path: u.pathname + u.search,
-      method: options.method || 'GET',
-      headers: options.headers || {}
-    }, (res) => {
-      let data = ''
-      res.on('data', chunk => data += chunk)
-      res.on('end', () => {
-        resolve({
-          ok: res.statusCode >= 200 && res.statusCode < 300,
-          status: res.statusCode,
-          json: async () => JSON.parse(data)
-        })
-      })
-    })
-    req.on('error', reject)
-    if (options.body) req.write(options.body)
-    req.end()
-  })
-}
-
 // ── POST /attempts/start ────────────────────────────────────────────────────
 router.post('/start', async (req, res, next) => {
   try {
@@ -88,7 +59,7 @@ router.post('/start', async (req, res, next) => {
     const serviceKey = process.env.INTERNAL_SERVICE_KEY || 'dev-service-key'
 
     try {
-      const response = await safeFetch(`${proctoringUrl}/internal/sessions`, {
+      const response = await fetch(`${proctoringUrl}/internal/sessions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -282,7 +253,7 @@ router.post('/:id/submit', requireStudentAuth, async (req, res, next) => {
 
     let proctoringSummary = null
     try {
-      const response = await safeFetch(`${proctoringUrl}/internal/sessions/${id}/end`, {
+      const response = await fetch(`${proctoringUrl}/internal/sessions/${id}/end`, {
         method: 'POST',
         headers: {
           'X-Service-Key': serviceKey
@@ -317,7 +288,7 @@ router.post('/:id/submit', requireStudentAuth, async (req, res, next) => {
         evaluation: { evaluation_config_id: r.evaluationConfigId }
       }))
 
-      safeFetch(`${gradingUrl}/grade`, {
+      fetch(`${gradingUrl}/grade`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ attemptId: id, answers: payloadAnswers })
