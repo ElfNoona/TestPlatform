@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import Editor, { useMonaco } from '@monaco-editor/react'
-import type { Question } from '../utils/api'
+import { useParams } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
+import { api, type Question } from '../utils/api'
 
 interface Props {
   question: Question | undefined
@@ -91,11 +93,69 @@ export default function QuestionRenderer({ question, answerValue, onAnswerChange
   const monaco = useMonaco()
   useDartLanguage(monaco)
 
+  const { attemptId } = useParams<{ attemptId: string }>()
+  const { token } = useAuth()
+
   const [selectedOption, setSelectedOption] = useState<string>(answerValue ?? '')
+  const [runState, setRunState] = useState<'idle' | 'running' | 'completed' | 'error'>('idle')
+  const [runResults, setRunResults] = useState<any[] | null>(null)
+  const [runError, setRunError] = useState<string | null>(null)
+
+  const activeJobIdRef = useRef<string | null>(null)
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     setSelectedOption(answerValue ?? '')
+    // Reset run state on question change
+    setRunState('idle')
+    setRunResults(null)
+    setRunError(null)
+    if (pollingRef.current) clearInterval(pollingRef.current)
   }, [answerValue, question?.id])
+
+  async function handleRunCode() {
+    if (!question || !attemptId || !token) return
+    const codeToRun = question.type === 'output-prediction' ? question.starterCode : answerValue
+    if (!codeToRun) return
+
+    setRunState('running')
+    setRunResults(null)
+    setRunError(null)
+
+    try {
+      const { jobId } = await api.runCode(attemptId, question.id, codeToRun, 'dart', token)
+      activeJobIdRef.current = jobId
+
+      if (pollingRef.current) clearInterval(pollingRef.current)
+      
+      pollingRef.current = setInterval(async () => {
+        if (activeJobIdRef.current !== jobId) {
+          // Stale execution, ignore
+          clearInterval(pollingRef.current!)
+          return
+        }
+        
+        try {
+          const res = await api.getRunCodeStatus(attemptId, jobId, token)
+          if (res.status === 'completed' || res.status === 'failed') {
+            if (activeJobIdRef.current !== jobId) return // double check
+            clearInterval(pollingRef.current!)
+            setRunState(res.status === 'completed' ? 'completed' : 'error')
+            if (res.result && res.result.results) {
+               setRunResults(res.result.results)
+            } else {
+               setRunError(res.error || 'Execution failed')
+            }
+          }
+        } catch (err) {
+          // Network error while polling, wait for next tick
+        }
+      }, 1500)
+    } catch (err: any) {
+      setRunState('error')
+      setRunError(err.message || 'Failed to enqueue execution')
+    }
+  }
 
   if (!question) {
     return (
@@ -199,13 +259,37 @@ export default function QuestionRenderer({ question, answerValue, onAnswerChange
             </div>
 
             {/* Bottom status/logs panel on the right pane */}
-            <div className="pane-status-footer">
-              <div>Ready to run tests…</div>
+            <div className="pane-status-footer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <button className="btn-primary" onClick={handleRunCode} disabled={runState === 'running'} style={{ padding: '0.3rem 0.8rem', fontSize: '0.75rem' }}>
+                  {runState === 'running' ? 'Running...' : 'Run / Test Code'}
+                </button>
+                {runState === 'error' && <span style={{ color: 'var(--color-danger)', fontSize: '0.8rem' }}>{runError || 'Execution Failed'}</span>}
+                {runState === 'completed' && <span style={{ color: 'var(--color-success)', fontSize: '0.8rem' }}>Execution Complete</span>}
+              </div>
               <div className="proctoring-badge">
                 <span className="dot" />
                 Proctoring Active
               </div>
             </div>
+
+            {/* Run Results Display */}
+            {runResults && (
+              <div style={{ padding: '1rem', background: 'var(--color-bg)', borderTop: '1px solid var(--color-border)', flexShrink: 0, overflowY: 'auto', maxHeight: '35%' }}>
+                 <h4 style={{ fontSize: '0.8rem', color: 'var(--color-muted)', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Execution Results:</h4>
+                 {runResults.map((res: any, idx: number) => (
+                   <div key={idx} style={{ marginBottom: '0.75rem', fontFamily: 'var(--font-mono)', fontSize: '0.8rem', padding: '0.75rem', borderRadius: 'var(--radius-sm)', background: 'rgba(0,0,0,0.2)', borderLeft: `3px solid ${res.status?.id === 3 ? 'var(--color-success)' : 'var(--color-danger)'}` }}>
+                     <div style={{ fontWeight: 600, color: 'var(--color-text-strong)', marginBottom: '0.25rem' }}>
+                       Test Case {idx + 1}: {res.status?.description || res.error}
+                     </div>
+                     {res.stdout && <div style={{ color: 'var(--color-text)', whiteSpace: 'pre-wrap' }}>{res.stdout}</div>}
+                     {res.stderr && <div style={{ color: 'var(--color-danger)', whiteSpace: 'pre-wrap' }}>{res.stderr}</div>}
+                     {res.compile_output && <div style={{ color: 'var(--color-warning)', whiteSpace: 'pre-wrap' }}>{res.compile_output}</div>}
+                   </div>
+                 ))}
+              </div>
+            )}
+
 
             {question.type === 'output-prediction' && (
               <div style={{

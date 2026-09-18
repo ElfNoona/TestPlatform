@@ -210,7 +210,7 @@ export default function ExamPage() {
           <div className="exam-header-right">
             <AutosaveIndicator status={saveStatus} lastSavedAt={lastSavedAt} />
             <div className="exam-divider" aria-hidden="true" />
-            <ExamTimer initialSeconds={state.remainingSeconds} />
+            <ExamTimer initialSeconds={state.remainingSeconds} onTimeUp={handleConfirmSubmit} />
             <div className="exam-divider" aria-hidden="true" />
             <button
               id="btn-submit-exam"

@@ -33,20 +33,22 @@ router.get('/students', requireTeacherAuth, async (req, res, next) => {
 // ── POST /admin/students ─────────────────────────────────────────────────────
 router.post('/students', requireTeacherAuth, async (req, res, next) => {
   try {
-    const { name, accessCode, slotId, questionSetId } = req.body
+    const { name, rollNumber, kiitEmail, accessCode, slotId, questionSetId } = req.body
     if (!name || !accessCode) {
       return res.status(400).json({ error: 'name and accessCode are required' })
     }
 
     const result = await db.query(
-      `INSERT INTO students (name, access_code, slot_id, question_set_id)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO students (name, roll_number, kiit_email, access_code, slot_id, question_set_id)
+       VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (access_code) DO UPDATE SET
          name             = EXCLUDED.name,
+         roll_number      = EXCLUDED.roll_number,
+         kiit_email       = EXCLUDED.kiit_email,
          slot_id          = EXCLUDED.slot_id,
          question_set_id  = EXCLUDED.question_set_id
-       RETURNING id, name, access_code, slot_id, question_set_id`,
-      [name, accessCode, slotId || null, questionSetId || null]
+       RETURNING id, name, roll_number, kiit_email, access_code, slot_id, question_set_id`,
+      [name, rollNumber || null, kiitEmail || null, accessCode, slotId || null, questionSetId || null]
     )
     res.status(201).json({ student: result.rows[0] })
   } catch (err) { next(err) }
@@ -70,14 +72,16 @@ router.get('/question-sets', requireTeacherAuth, async (req, res, next) => {
 // ── POST /admin/question-sets ────────────────────────────────────────────────
 router.post('/question-sets', requireTeacherAuth, async (req, res, next) => {
   try {
-    const { name } = req.body
+    const { name, durationSeconds } = req.body
     if (!name || typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({ error: 'name is required' })
     }
 
+    const duration = typeof durationSeconds === 'number' && durationSeconds > 0 ? durationSeconds : 7200;
+
     const result = await db.query(
-      `INSERT INTO question_sets (name) VALUES ($1) RETURNING *`,
-      [name.trim()]
+      `INSERT INTO question_sets (name, duration_seconds) VALUES ($1, $2) RETURNING *`,
+      [name.trim(), duration]
     )
     res.status(201).json({ questionSet: result.rows[0] })
   } catch (err) { next(err) }
@@ -350,5 +354,92 @@ router.post('/sessions/:sessionId/review', requireTeacherAuth, async (req, res, 
   } catch (err) { next(err) }
 })
 
-module.exports = router
+// ── GET /admin/submissions ───────────────────────────────────────────────────
+router.get('/submissions', requireTeacherAuth, async (req, res, next) => {
+  try {
+    const { roll_number, kiit_email } = req.query
+    if (!roll_number && !kiit_email) {
+      return res.status(400).json({ error: 'Provide roll_number or kiit_email' })
+    }
 
+    let query = `
+      SELECT a.id as attempt_id, a.start_time, a.submitted_at, s.name, s.roll_number, s.kiit_email 
+      FROM attempts a
+      JOIN students s ON s.id = a.student_id
+      WHERE a.submitted_at IS NOT NULL
+    `
+    const params = []
+    if (roll_number) {
+      params.push(roll_number)
+      query += ` AND s.roll_number = $${params.length}`
+    } else if (kiit_email) {
+      params.push(kiit_email)
+      query += ` AND s.kiit_email = $${params.length}`
+    }
+    
+    query += ` ORDER BY a.submitted_at DESC`
+
+    const result = await db.query(query, params)
+    res.json({ submissions: result.rows })
+  } catch (err) { next(err) }
+})
+
+// ── GET /admin/attempts/:id/submission ───────────────────────────────────────
+router.get('/attempts/:id/submission', requireTeacherAuth, async (req, res, next) => {
+  try {
+    const { id } = req.params
+    // Get attempt and student info
+    const attemptRes = await db.query(`
+      SELECT a.id, a.start_time, a.submitted_at, s.name, s.roll_number, s.kiit_email
+      FROM attempts a JOIN students s ON s.id = a.student_id
+      WHERE a.id = $1
+    `, [id])
+    if (attemptRes.rows.length === 0) return res.status(404).json({ error: 'Attempt not found' })
+
+    // Get answers and questions
+    const answersRes = await db.query(`
+      SELECT ans.id as answer_id, ans.question_id, ans.answer_text, 
+             q.prompt, q.type, q.marks, q.correct_answer,
+             g.teacher_score, g.teacher_comment
+      FROM answers ans
+      JOIN questions q ON q.id = ans.question_id
+      LEFT JOIN grades g ON g.attempt_id = ans.attempt_id AND g.question_id = ans.question_id
+      WHERE ans.attempt_id = $1
+    `, [id])
+
+    res.json({
+      attempt: attemptRes.rows[0],
+      answers: answersRes.rows
+    })
+  } catch (err) { next(err) }
+})
+
+// ── POST /admin/attempts/:id/grades ──────────────────────────────────────────
+router.post('/attempts/:id/grades', requireTeacherAuth, async (req, res, next) => {
+  try {
+    const { id } = req.params
+    const { questionId, score, comment } = req.body
+    
+    if (!questionId || score === undefined) {
+      return res.status(400).json({ error: 'questionId and score are required' })
+    }
+
+    // Get max score for validation
+    const questionRes = await db.query('SELECT marks FROM questions WHERE id = $1', [questionId])
+    const maxScore = questionRes.rows.length > 0 ? questionRes.rows[0].marks : 10
+
+    await db.query(`
+      INSERT INTO grades (attempt_id, question_id, teacher_score, max_score, teacher_comment, status, evaluated_at)
+      VALUES ($1, $2, $3, $4, $5, 'GRADED', now())
+      ON CONFLICT (attempt_id, question_id) DO UPDATE SET
+        teacher_score = EXCLUDED.teacher_score,
+        teacher_comment = EXCLUDED.teacher_comment,
+        status = 'GRADED',
+        evaluated_at = now()
+    `, [id, questionId, score, maxScore, comment || null])
+
+    res.json({ success: true })
+  } catch (err) { next(err) }
+})
+
+module.exports = router

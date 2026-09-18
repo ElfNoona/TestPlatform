@@ -16,6 +16,8 @@ const SQL = `
 CREATE TABLE IF NOT EXISTS students (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name             TEXT NOT NULL,
+  roll_number      TEXT,
+  kiit_email       TEXT,
   access_code      TEXT UNIQUE NOT NULL,
   slot_id          TEXT,                      -- TODO: normalise to a slots table
   question_set_id  UUID,
@@ -48,6 +50,7 @@ CREATE TABLE IF NOT EXISTS question_sets (
   name             TEXT NOT NULL,
   version          INT NOT NULL DEFAULT 1,
   status           TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','published','archived')),
+  duration_seconds INT NOT NULL DEFAULT 7200,
   created_at       TIMESTAMPTZ DEFAULT now(),
   published_at     TIMESTAMPTZ
 );
@@ -108,6 +111,8 @@ CREATE TABLE IF NOT EXISTS grades (
   evaluated_at       TIMESTAMPTZ,
   UNIQUE (attempt_id, question_id)
 );
+
+ALTER TABLE question_sets ADD COLUMN IF NOT EXISTS duration_seconds INT NOT NULL DEFAULT 7200;
 `
 
 async function migrate() {

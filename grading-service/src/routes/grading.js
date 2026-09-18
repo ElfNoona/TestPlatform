@@ -2,65 +2,53 @@
 
 const { Router } = require('express')
 const router = Router()
-const db = require('../db')
-const { gradeMcq, gradeOutputPrediction, gradeWithAi, evaluateWithJudge0 } = require('../graders')
+const { executeCode } = require('../services/judge0')
+const { getJudge0LanguageId } = require('../services/languages')
 
 /**
- * POST /grade — called by backend after a student submits.
+ * POST /grade/execute — called by backend when student clicks "Run/Test Code"
  *
- * Body: { attemptId, answers: [{ questionId, type, answerText, starterCode, correctAnswer }] }
+ * Body: { code, language, testCases: [{ stdin, expected_stdout }] }
  *
- * Returns: { grades: [{ questionId, score, maxScore, rationale, needsReview }] }
- *
- * MCQ + output-prediction are auto-graded synchronously.
- * coding + debug go to AI grader → always flagged needsReview=true until teacher confirms.
- *
- * TODO: persist grades to DB
- * TODO: handle AI provider errors gracefully (fallback to needsReview=true, score=null)
+ * Returns Judge0 execution results for each test case.
+ * DOES NOT save any grades to the database.
  */
-router.post('/', async (req, res, next) => {
+router.post('/execute', async (req, res, next) => {
   try {
-    const { attemptId, answers = [] } = req.body
-    if (!attemptId) return res.status(400).json({ error: 'attemptId required' })
-
-    const grades = await Promise.all(answers.map(async (ans) => {
-      switch (ans.type) {
-        case 'mcq':
-          return gradeMcq(ans)
-        case 'output-prediction':
-          return gradeOutputPrediction(ans)
-        case 'coding':
-        case 'debug':
-          return evaluateWithJudge0(ans)
-        default:
-          return { questionId: ans.questionId, score: null, maxScore: 1, rationale: 'Unknown type', needsReview: true }
-      }
-    }))
-
-    // Save grades to DB
-    for (const g of grades) {
-      await db.query(
-        `INSERT INTO grades (attempt_id, question_id, auto_score, max_score, status, rationale, evaluated_at) 
-         VALUES ($1, $2, $3, $4, $5, $6, now())
-         ON CONFLICT (attempt_id, question_id) 
-         DO UPDATE SET 
-            auto_score = EXCLUDED.auto_score, 
-            max_score = EXCLUDED.max_score, 
-            status = EXCLUDED.status, 
-            rationale = EXCLUDED.rationale, 
-            evaluated_at = EXCLUDED.evaluated_at`,
-        [
-          attemptId, 
-          g.questionId, 
-          g.score, 
-          g.maxScore, 
-          g.needsReview ? 'NEEDS_REVIEW' : 'GRADED', 
-          g.rationale
-        ]
-      )
+    const { code, language = 'dart', testCases = [] } = req.body
+    
+    if (!code) {
+      return res.status(400).json({ error: 'Code is required' })
     }
 
-    res.json({ attemptId, grades })
+    const langId = getJudge0LanguageId(language)
+    const results = []
+
+    // Execute test cases sequentially (for synchronous implementation)
+    for (const tc of testCases) {
+      try {
+        const result = await executeCode(code, langId, tc.stdin || '', tc.expected_stdout || '')
+        results.push({
+          stdin: tc.stdin,
+          expected_stdout: tc.expected_stdout,
+          stdout: result.stdout,
+          stderr: result.stderr,
+          compile_output: result.compile_output,
+          status: result.status,
+          time: result.time,
+          memory: result.memory
+        })
+      } catch (err) {
+        console.error('[grading-service/execute] Error executing test case:', err)
+        results.push({
+          stdin: tc.stdin,
+          error: 'Execution failed',
+          details: err.message
+        })
+      }
+    }
+
+    res.json({ results })
   } catch (err) { next(err) }
 })
 

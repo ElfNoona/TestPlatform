@@ -59,6 +59,7 @@ const QUESTION_TEMPLATES: Record<QuestionType, object> = {
 export default function QuestionUpload({ token, onSuccess }: QuestionUploadProps) {
   const [step, setStep] = useState<'name' | 'upload' | 'uploading' | 'done'>('name')
   const [setName, setSetName] = useState('')
+  const [durationMinutes, setDurationMinutes] = useState('120')
   const [createdSetId, setCreatedSetId] = useState<string | null>(null)
   const [jsonText, setJsonText] = useState('')
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([])
@@ -76,7 +77,7 @@ export default function QuestionUpload({ token, onSuccess }: QuestionUploadProps
       const res = await fetch('/api/admin/question-sets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ name: setName.trim() })
+        body: JSON.stringify({ name: setName.trim(), durationSeconds: parseInt(durationMinutes, 10) * 60 || 7200 })
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
@@ -234,6 +235,22 @@ export default function QuestionUpload({ token, onSuccess }: QuestionUploadProps
               placeholder="e.g. Batch A — Dart Fundamentals"
               value={setName}
               onChange={(e) => setSetName(e.target.value)}
+              disabled={step !== 'name'}
+              onKeyDown={(e) => e.key === 'Enter' && handleCreateSet()}
+              style={{ width: '100%' }}
+            />
+          </div>
+          <div style={{ width: '120px' }}>
+            <label htmlFor="qset-duration" style={{ fontSize: '0.78rem', color: 'var(--color-muted)', display: 'block', marginBottom: '0.4rem' }}>
+              Duration (mins)
+            </label>
+            <input
+              id="qset-duration"
+              className="input"
+              type="number"
+              min="1"
+              value={durationMinutes}
+              onChange={(e) => setDurationMinutes(e.target.value)}
               disabled={step !== 'name'}
               onKeyDown={(e) => e.key === 'Enter' && handleCreateSet()}
               style={{ width: '100%' }}

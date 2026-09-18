@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from 'react'
 interface Props {
   /** Remaining seconds as reported by the server (source of truth). */
   initialSeconds: number
+  /** Callback triggered when countdown hits zero */
+  onTimeUp?: () => void
 }
 
 /**
@@ -14,7 +16,7 @@ interface Props {
  * NOTE: This component does NOT govern when the exam ends — that is
  * enforced server-side. This is display only.
  */
-export default function ExamTimer({ initialSeconds }: Props) {
+export default function ExamTimer({ initialSeconds, onTimeUp }: Props) {
   const [remaining, setRemaining] = useState(initialSeconds)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -23,7 +25,14 @@ export default function ExamTimer({ initialSeconds }: Props) {
 
   useEffect(() => {
     intervalRef.current = setInterval(() => {
-      setRemaining((s) => Math.max(0, s - 1))
+      setRemaining((s) => {
+        if (s <= 1) {
+          if (intervalRef.current) clearInterval(intervalRef.current)
+          onTimeUp?.()
+          return 0
+        }
+        return s - 1
+      })
     }, 1000)
     return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
   }, [])

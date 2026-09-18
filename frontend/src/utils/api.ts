@@ -101,6 +101,23 @@ export const api = {
       method: 'POST',
     }, token),
 
+  /**
+   * POST /attempts/:id/run-code — run code asynchronously using BullMQ.
+   * Requires student JWT.
+   */
+  runCode: (attemptId: string, questionId: string, code: string, language: string, token: string) =>
+    request<{ jobId: string }>(`/attempts/${attemptId}/run-code`, {
+      method: 'POST',
+      body: JSON.stringify({ questionId, code, language }),
+    }, token),
+
+  /**
+   * GET /attempts/:id/run-code/:jobId — poll for async run code status.
+   * Requires student JWT.
+   */
+  getRunCodeStatus: (attemptId: string, jobId: string, token: string) =>
+    request<{ status: 'queued' | 'active' | 'completed' | 'failed'; result?: any; error?: string }>(`/attempts/${attemptId}/run-code/${jobId}`, {}, token),
+
   // ── Teacher Admin API ─────────────────────────────────────────────────────
 
   /** GET /admin/students — list all students */

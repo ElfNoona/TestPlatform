@@ -8,6 +8,16 @@
  * POST /attempts/:id/answers    — upsert one or more answers (autosave)
  * POST /attempts/:id/submit     — mark attempt as submitted (enforces time cutoff)
  *
+'use strict'
+
+/**
+ * routes/attempts.js — four core exam-attempt endpoints.
+ *
+ * POST /attempts/start          — validate access code, create attempt, return JWT
+ * GET  /attempts/:id/state      — server-authoritative remaining time + question list
+ * POST /attempts/:id/answers    — upsert one or more answers (autosave)
+ * POST /attempts/:id/submit     — mark attempt as submitted (enforces time cutoff)
+ *
  * Timer is ALWAYS computed server-side from start_time + duration_seconds.
  * The server refuses to accept /answers or /submit after time has expired.
  */
@@ -16,6 +26,7 @@ const { Router } = require('express')
 const jwt = require('jsonwebtoken')
 const db = require('../db')
 const { requireStudentAuth } = require('../middleware/auth')
+const { executionQueue } = require('../services/queue')
 
 const router = Router()
 
@@ -44,7 +55,10 @@ router.post('/start', async (req, res, next) => {
     } else {
       const insertAttemptText = `
         INSERT INTO attempts (student_id, start_time, duration_seconds)
-        VALUES ($1, now(), 7200)
+        SELECT $1, now(), COALESCE(q.duration_seconds, 7200)
+        FROM students s
+        LEFT JOIN question_sets q ON q.id = s.question_set_id
+        WHERE s.id = $1
         RETURNING *;
       `
       const newAttemptRes = await db.query(insertAttemptText, [student.id])
@@ -205,7 +219,8 @@ router.post('/:id/answers', requireStudentAuth, async (req, res, next) => {
     // Server-side time check — refuse if time has expired
     const elapsed = Math.floor((Date.now() - new Date(attempt.start_time).getTime()) / 1000)
     if (elapsed > attempt.duration_seconds) {
-      return res.status(409).json({ error: 'Exam time has expired' })
+      await db.query('UPDATE attempts SET submitted_at = now() WHERE id = $1 AND submitted_at IS NULL', [id])
+      return res.status(403).json({ error: 'Exam time has expired. Attempt has been auto-submitted.' })
     }
 
     // Upsert each answer (idempotent)
@@ -266,41 +281,80 @@ router.post('/:id/submit', requireStudentAuth, async (req, res, next) => {
       console.error('[backend-submit-proctoring] Error ending proctoring session:', err.message)
     }
 
-    // Trigger grading-service job (fire-and-forget)
-    const gradingUrl = process.env.GRADING_SERVICE_URL || 'http://localhost:6000'
-    try {
-      const answersForGradingRes = await db.query(
-        `SELECT a.question_id as "questionId", a.answer_text as "answerText",
-                q.type, q.starter_code as "starterCode", q.correct_answer as "correctAnswer",
-                q.evaluation_config_id as "evaluationConfigId"
-         FROM answers a
-         JOIN questions q ON q.id = a.question_id
-         WHERE a.attempt_id = $1`,
-        [id]
-      )
-      
-      const payloadAnswers = answersForGradingRes.rows.map(r => ({
-        questionId: r.questionId,
-        type: r.type,
-        answerText: r.answerText,
-        starterCode: r.starterCode,
-        correctAnswer: r.correctAnswer,
-        evaluation: { evaluation_config_id: r.evaluationConfigId }
-      }))
-
-      fetch(`${gradingUrl}/grade`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ attemptId: id, answers: payloadAnswers })
-      }).catch(err => console.error('[backend-submit-grading] Error triggering grading:', err.message))
-    } catch (err) {
-       console.error('[backend-submit-grading] Error fetching answers for grading:', err.message)
-    }
-
     res.json({
       submitted: true,
       proctoring: proctoringSummary
     })
+  } catch (err) { next(err) }
+})
+
+// ── POST /attempts/:id/run-code ─────────────────────────────────────────────
+router.post('/:id/run-code', requireStudentAuth, async (req, res, next) => {
+  try {
+    const { id } = req.params
+    const { questionId, code, language } = req.body
+    
+    if (!questionId || !code) {
+      return res.status(400).json({ error: 'questionId and code are required' })
+    }
+
+    // Verify attempt ownership
+    const attemptRes = await db.query('SELECT * FROM attempts WHERE id = $1', [id])
+    if (attemptRes.rows.length === 0) return res.status(404).json({ error: 'Attempt not found' })
+    
+    const attempt = attemptRes.rows[0]
+    const authStudentId = req.student.studentId || req.student.student_id
+    if (attempt.student_id !== authStudentId) return res.status(403).json({ error: 'Forbidden' })
+    if (attempt.submitted_at) return res.status(409).json({ error: 'Attempt already submitted' })
+
+    const elapsed = Math.floor((Date.now() - new Date(attempt.start_time).getTime()) / 1000)
+    if (elapsed > attempt.duration_seconds) {
+      await db.query('UPDATE attempts SET submitted_at = now() WHERE id = $1 AND submitted_at IS NULL', [id])
+      return res.status(403).json({ error: 'Exam time has expired. Attempt has been auto-submitted.' })
+    }
+
+    // Fetch visible test cases for the question (all test cases are now visible)
+    const testCasesRes = await db.query(
+      'SELECT stdin, expected_stdout FROM test_cases WHERE question_id = $1',
+      [questionId]
+    )
+    const testCases = testCasesRes.rows
+
+    // Forward to BullMQ code-execution queue
+    const job = await executionQueue.add('execute', {
+      attemptId: id,
+      questionId,
+      code,
+      language,
+      testCases
+    })
+
+    res.json({ jobId: job.id })
+  } catch (err) { next(err) }
+})
+
+// ── GET /attempts/:id/run-code/:jobId ───────────────────────────────────────
+router.get('/:id/run-code/:jobId', requireStudentAuth, async (req, res, next) => {
+  try {
+    const { id, jobId } = req.params
+    
+    // Verify attempt ownership
+    const attemptRes = await db.query('SELECT * FROM attempts WHERE id = $1', [id])
+    if (attemptRes.rows.length === 0) return res.status(404).json({ error: 'Attempt not found' })
+    const attempt = attemptRes.rows[0]
+    const authStudentId = req.student.studentId || req.student.student_id
+    if (attempt.student_id !== authStudentId) return res.status(403).json({ error: 'Forbidden' })
+
+    const job = await executionQueue.getJob(jobId)
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found' })
+    }
+
+    const state = await job.getState()
+    const result = job.returnvalue
+    const error = job.failedReason
+
+    res.json({ status: state, result, error })
   } catch (err) { next(err) }
 })
 
