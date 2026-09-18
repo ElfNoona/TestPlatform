@@ -27,10 +27,13 @@ router.post('/execute', async (req, res, next) => {
     // Execute test cases sequentially (for synchronous implementation)
     for (const tc of testCases) {
       try {
-        const result = await executeCode(code, langId, tc.stdin || '', tc.expected_stdout || '')
+        const input = tc.stdin ?? tc.input ?? ''
+        const expected = tc.expected_stdout ?? tc.expectedOutput ?? ''
+        
+        const result = await executeCode(code, langId, input, expected)
         results.push({
-          stdin: tc.stdin,
-          expected_stdout: tc.expected_stdout,
+          stdin: input,
+          expected_stdout: expected,
           stdout: result.stdout,
           stderr: result.stderr,
           compile_output: result.compile_output,
@@ -41,7 +44,7 @@ router.post('/execute', async (req, res, next) => {
       } catch (err) {
         console.error('[grading-service/execute] Error executing test case:', err)
         results.push({
-          stdin: tc.stdin,
+          stdin: tc.stdin ?? tc.input,
           error: 'Execution failed',
           details: err.message
         })

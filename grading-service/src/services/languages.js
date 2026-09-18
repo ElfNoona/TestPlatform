@@ -9,7 +9,7 @@
 
 const LANGUAGE_IDS = {
   // Common IDs for Judge0 Extra CE
-  'dart': 72,
+  'dart': 90,
   'python': 71,
   'javascript': 63,
   'java': 62,
