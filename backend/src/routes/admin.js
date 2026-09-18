@@ -15,6 +15,13 @@
 const { Router } = require('express')
 const { requireTeacherAuth } = require('../middleware/auth')
 const db = require('../db')
+const multer = require('multer')
+const XLSX = require('xlsx')
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
+})
 
 const router = Router()
 
@@ -27,6 +34,68 @@ router.get('/students', requireTeacherAuth, async (req, res, next) => {
        ORDER BY name ASC`
     )
     res.json({ students: result.rows })
+  } catch (err) { next(err) }
+})
+
+// ── POST /admin/students/upload ──────────────────────────────────────────────
+router.post('/students/upload', requireTeacherAuth, upload.single('file'), async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Missing file' })
+    }
+
+    const ext = req.file.originalname.split('.').pop().toLowerCase()
+    if (!['csv', 'xlsx', 'xls'].includes(ext)) {
+      return res.status(400).json({ error: 'Unsupported file type. Please upload a .csv or .xlsx file.' })
+    }
+
+    let wb
+    try {
+      wb = XLSX.read(req.file.buffer, { type: 'buffer' })
+    } catch (e) {
+      return res.status(400).json({ error: 'Failed to parse file. Ensure it is a valid spreadsheet.' })
+    }
+
+    const ws = wb.Sheets[wb.SheetNames[0]]
+    const rows = XLSX.utils.sheet_to_json(ws)
+
+    let inserted = 0
+    let failed = 0
+    const errors = []
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i]
+      const { name, access_code, slot_id, question_set_id } = row
+
+      if (!name || !access_code) {
+        failed++
+        errors.push({ row: i + 1, error: 'missing name or access_code', data: row })
+        continue
+      }
+
+      try {
+        await db.query(
+          `INSERT INTO students (name, access_code, slot_id, question_set_id)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (access_code) DO UPDATE SET
+             name             = EXCLUDED.name,
+             slot_id          = EXCLUDED.slot_id,
+             question_set_id  = EXCLUDED.question_set_id`,
+          [name, access_code, slot_id || null, question_set_id || null]
+        )
+        inserted++
+      } catch (err) {
+        failed++
+        errors.push({ row: i + 1, error: err.message, data: row })
+      }
+    }
+
+    res.status(200).json({
+      total: rows.length,
+      inserted,
+      failed,
+      errors
+    })
   } catch (err) { next(err) }
 })
 

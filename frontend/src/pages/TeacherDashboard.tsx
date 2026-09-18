@@ -96,6 +96,10 @@ export default function TeacherDashboard() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [publishingId, setPublishingId] = useState<string | null>(null)
+  
+  const [uploadingSpreadsheet, setUploadingSpreadsheet] = useState(false)
+  const [uploadStats, setUploadStats] = useState<{ total: number; inserted: number; failed: number } | null>(null)
+  const [uploadError, setUploadError] = useState<string | null>(null)
 
   const isMockMode = teacherToken === 'mock-teacher-token'
 
@@ -115,6 +119,34 @@ export default function TeacherDashboard() {
       setError(err.message)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file || !teacherToken) return
+    e.target.value = '' // reset
+    setUploadingSpreadsheet(true)
+    setUploadError(null)
+    setUploadStats(null)
+
+    const formData = new FormData()
+    formData.append('file', file)
+
+    try {
+      const res = await fetch('/api/admin/students/upload', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${teacherToken}` },
+        body: formData
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Upload failed')
+      setUploadStats({ total: data.total, inserted: data.inserted, failed: data.failed })
+      fetchCandidates()
+    } catch (err: any) {
+      setUploadError(err.message)
+    } finally {
+      setUploadingSpreadsheet(false)
     }
   }
 
@@ -421,7 +453,6 @@ export default function TeacherDashboard() {
                     <circle cx="12" cy="12" r="10" /><path d="M8 14s1.5 2 4 2 4-2 4-2" /><line x1="9" y1="9" x2="9.01" y2="9" /><line x1="15" y1="9" x2="15.01" y2="9" />
                   </svg>
                   <p style={{ fontSize: '0.82rem', margin: 0 }}>No candidates registered in this exam sitting yet.</p>
-                  <p style={{ fontSize: '0.75rem', color: 'var(--color-faint)', margin: 0 }}>Import students from CSV/XLSX using the admin CLI.</p>
                 </div>
               ) : (
                 <div style={{ overflowX: 'auto' }}>
@@ -550,6 +581,39 @@ export default function TeacherDashboard() {
                   </table>
                 </div>
               )}
+
+              {/* Upload UI inserted below the candidates list */}
+              <div style={{ marginTop: '2rem', padding: '1.5rem', backgroundColor: 'var(--color-surface)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)' }}>
+                <h3 style={{ fontSize: '1rem', marginBottom: '0.5rem', fontWeight: 600 }}>Import Students</h3>
+                <p style={{ fontSize: '0.82rem', color: 'var(--color-muted)', marginBottom: '1rem' }}>
+                  Upload a .csv or .xlsx spreadsheet containing columns: <code>name</code>, <code>access_code</code>, <code>slot_id</code>, <code>question_set_id</code>.
+                </p>
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                  <label className={uploadingSpreadsheet ? "btn-secondary disabled" : "btn-secondary"} style={{ cursor: uploadingSpreadsheet ? 'not-allowed' : 'pointer', display: 'inline-block' }}>
+                    {uploadingSpreadsheet ? 'Uploading...' : 'Select File'}
+                    <input 
+                      type="file" 
+                      accept=".csv, .xlsx, .xls" 
+                      style={{ display: 'none' }} 
+                      onChange={handleFileUpload}
+                      disabled={uploadingSpreadsheet}
+                    />
+                  </label>
+                </div>
+
+                {uploadError && (
+                  <div style={{ marginTop: '1rem', padding: '0.75rem', backgroundColor: 'rgba(209,69,56,0.1)', color: 'var(--color-danger)', borderRadius: 'var(--radius-sm)', fontSize: '0.82rem' }}>
+                    <strong>Error:</strong> {uploadError}
+                  </div>
+                )}
+
+                {uploadStats && (
+                  <div style={{ marginTop: '1rem', padding: '0.75rem', backgroundColor: 'rgba(118, 199, 192, 0.1)', color: 'var(--color-accent-1)', borderRadius: 'var(--radius-sm)', fontSize: '0.82rem' }}>
+                    <strong>Upload Complete:</strong> Read {uploadStats.total} rows. Inserted/Updated: {uploadStats.inserted}. Failed: {uploadStats.failed}.
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
