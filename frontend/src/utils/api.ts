@@ -4,7 +4,7 @@
  * On 401, calls onUnauthorized (wired to logout + navigate in App).
  */
 
-const BASE_URL = '/api'
+export const BASE_URL = import.meta.env.VITE_API_URL || '/api'
 
 // ── Question type (shared with QuestionRenderer) ─────────────────────────────
 export interface Question {

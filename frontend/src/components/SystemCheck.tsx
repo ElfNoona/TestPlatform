@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import KrsLogo from './KrsLogo'
-
+import { BASE_URL } from '../utils/api'
 interface SystemCheckProps {
   attemptId: string
   token: string
@@ -61,7 +61,7 @@ export default function SystemCheck({ attemptId, token, proctoringOrigin: _proct
     // 3. Backend API Connection
     updateCheckStatus('api', 'checking')
     try {
-      const response = await fetch(`${window.location.origin}/api/attempts/${attemptId}/state`, {
+      const response = await fetch(`${BASE_URL}/attempts/${attemptId}/state`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }

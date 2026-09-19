@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { BASE_URL } from '../utils/api'
 
 interface QuestionUploadProps {
   token: string
@@ -74,7 +75,7 @@ export default function QuestionUpload({ token, onSuccess }: QuestionUploadProps
     if (!setName.trim()) return
     setIsCreatingSet(true)
     try {
-      const res = await fetch('/api/admin/question-sets', {
+      const res = await fetch(`${BASE_URL}/admin/question-sets`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ name: setName.trim(), durationSeconds: parseInt(durationMinutes, 10) * 60 || 7200 })
@@ -159,7 +160,7 @@ export default function QuestionUpload({ token, onSuccess }: QuestionUploadProps
 
     setStep('uploading')
     try {
-      const res = await fetch(`/api/admin/question-sets/${createdSetId}/questions`, {
+      const res = await fetch(`${BASE_URL}/admin/question-sets/${createdSetId}/questions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ questions: validated.questions })

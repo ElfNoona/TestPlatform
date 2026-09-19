@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import KrsLogo from '../components/KrsLogo'
 import QuestionUpload from '../components/QuestionUpload'
-
+import { BASE_URL } from '../utils/api'
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Candidate {
   id: string
@@ -109,7 +109,7 @@ export default function TeacherDashboard() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/admin/students', {
+      const res = await fetch(`${BASE_URL}/admin/students`, {
         headers: { 'Authorization': `Bearer ${teacherToken}` }
       })
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
@@ -134,7 +134,7 @@ export default function TeacherDashboard() {
     formData.append('file', file)
 
     try {
-      const res = await fetch('/api/admin/students/upload', {
+      const res = await fetch(`${BASE_URL}/admin/students/upload`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${teacherToken}` },
         body: formData
@@ -155,7 +155,7 @@ export default function TeacherDashboard() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/admin/question-sets', {
+      const res = await fetch(`${BASE_URL}/admin/question-sets`, {
         headers: { 'Authorization': `Bearer ${teacherToken}` }
       })
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
@@ -172,7 +172,7 @@ export default function TeacherDashboard() {
     if (!teacherToken) return
     setPublishingId(setId)
     try {
-      const res = await fetch(`/api/admin/question-sets/${setId}/publish`, {
+      const res = await fetch(`${BASE_URL}/admin/question-sets/${setId}/publish`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${teacherToken}` }
       })
