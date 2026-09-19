@@ -49,11 +49,8 @@ export class ProctoringSocket {
       const originUrl = new URL(this.proctoringOrigin)
       host = originUrl.host
     } catch {
-      // Fallback if parsing fails
-      if (typeof window !== 'undefined') {
-        const h = window.location.host
-        host = h.includes(':') ? `${h.split(':')[0]}:7000` : `${h}:7000`
-      }
+      // Fallback only if parsing fails completely
+      host = 'localhost:7000'
     }
 
     const wsUrl = `${wsProto}://${host}/ws/proctoring/${this.sessionId}?token=${this.token}`

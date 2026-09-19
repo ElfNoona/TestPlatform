@@ -12,6 +12,15 @@ import { api, AttemptState } from '../utils/api'
 import SystemCheck from '../components/SystemCheck'
 import { useProctoring } from '../proctoring/useProctoring'
 
+if (!import.meta.env.VITE_PROCTORING_URL && import.meta.env.PROD) {
+  throw new Error('VITE_PROCTORING_URL is required in production')
+}
+
+const PROCTORING_URL =
+  import.meta.env.VITE_PROCTORING_URL ||
+  (import.meta.env.DEV
+    ? window.location.origin.replace(':5173', ':7000')
+    : '')
 export default function ExamPage() {
   const { attemptId } = useParams<{ attemptId: string }>()
   const navigate       = useNavigate()
@@ -37,7 +46,7 @@ export default function ExamPage() {
   } = useProctoring({
     sessionId: systemCheckPassed ? proctorSessionId : null,
     token,
-    proctoringOrigin: window.location.origin.replace(':5173', ':7000')
+    proctoringOrigin: PROCTORING_URL
   })
 
   // Skip system check automatically if proctoring is unavailable
@@ -170,7 +179,7 @@ export default function ExamPage() {
       <SystemCheck
         attemptId={attemptId || ''}
         token={token}
-        proctoringOrigin={window.location.origin.replace(':5173', ':7000')}
+        proctoringOrigin={PROCTORING_URL}
         onComplete={() => setSystemCheckPassed(true)}
       />
     )
